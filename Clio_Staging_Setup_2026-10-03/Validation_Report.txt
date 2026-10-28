@@ -1,0 +1,18 @@
+Validation performed on 3 October 2026
+
+PASS: 61 unique source table definitions in the staging bootstrap.
+PASS: Outer and nested SQL string literals round-trip without corruption.
+PASS: Single batch; no GO separators that could continue after a failed precondition.
+PASS: Existing Clio_Staging is refused before mutation.
+PASS: Database context for all installation DDL/DML is Clio_Staging.
+PASS: Static mutation scan found no explicitly qualified EKPBI_New writes.
+PASS: Non-secret configuration copy uses an explicit column allowlist and Active=0.
+PASS: No login/user creation, SQL Agent start, or production publisher is installed.
+PASS: No reporting/materialized or business-owned tables are included.
+PASS: PublishEnabled is constrained to zero.
+
+NOT RUN: SQL Server compilation, execution, permissions, collation/column comparison,
+EXE integration, API extraction, runtime rollback or performance tests.
+No connected SQL Server or local SQL Server runtime was available.
+The live column-contract comparison runs during setup and blocks schema drift.
+This package is an extraction-only foundation, not a validated production pipeline.

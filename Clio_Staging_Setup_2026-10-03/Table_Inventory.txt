@@ -1,0 +1,61 @@
+Contacts | candidate raw, endpoint confirmation required
+CustomFields | candidate raw, endpoint confirmation required
+Folders | candidate raw, endpoint confirmation required
+PracticeAreas | candidate raw, endpoint confirmation required
+Relationships | candidate raw, endpoint confirmation required
+TaskTypes | candidate raw, endpoint confirmation required
+Users | candidate raw, endpoint confirmation required
+Activities | candidate raw, endpoint confirmation required
+ContactNotes | candidate raw, endpoint confirmation required
+MatterNotes | candidate raw, endpoint confirmation required
+Allocations | candidate raw, endpoint confirmation required
+BankTransactions | candidate raw, endpoint confirmation required
+Bills | candidate raw, endpoint confirmation required
+BillThemes | candidate raw, endpoint confirmation required
+LineItems | candidate raw, endpoint confirmation required
+Matters | candidate raw, endpoint confirmation required
+Tasks | candidate raw, endpoint confirmation required
+ActivityDescriptions | candidate raw, endpoint confirmation required
+ActivityRates | candidate raw, endpoint confirmation required
+BankAccounts | candidate raw, endpoint confirmation required
+BankTransfers | candidate raw, endpoint confirmation required
+CalendarEntries | candidate raw, endpoint confirmation required
+Calendars | candidate raw, endpoint confirmation required
+Communications | candidate raw, endpoint confirmation required
+ConversationMessages | candidate raw, endpoint confirmation required
+Conversations | candidate raw, endpoint confirmation required
+CreditCards | candidate raw, endpoint confirmation required
+CreditMemos | candidate raw, endpoint confirmation required
+Currencies | candidate raw, endpoint confirmation required
+CustomActions | candidate raw, endpoint confirmation required
+CustomFieldSets | candidate raw, endpoint confirmation required
+DocumentAutomations | candidate raw, endpoint confirmation required
+DocumentCategories | candidate raw, endpoint confirmation required
+Documents | candidate raw, endpoint confirmation required
+DocumentTemplates | candidate raw, endpoint confirmation required
+ExpenseCategories | candidate raw, endpoint confirmation required
+Groups | candidate raw, endpoint confirmation required
+Reminders | candidate raw, endpoint confirmation required
+TableSettings | support/config
+TaskCalendars | candidate raw, endpoint confirmation required
+TaskTemplateLists | candidate raw, endpoint confirmation required
+TaskTemplates | candidate raw, endpoint confirmation required
+TextSnippets | candidate raw, endpoint confirmation required
+Timers | candidate raw, endpoint confirmation required
+UserInvitations | candidate raw, endpoint confirmation required
+UserRoles | candidate raw, endpoint confirmation required
+UserTypes | candidate raw, endpoint confirmation required
+UtbmsCodes | candidate raw, endpoint confirmation required
+UtbmsSets | candidate raw, endpoint confirmation required
+WebHooks | candidate raw, endpoint confirmation required
+ActivityTypes | lookup
+AppCurrencies | lookup
+BillKinds | lookup
+BillStateTypes | lookup
+BillTypeNames | lookup
+BillTypes | lookup
+MatterStatusTypes | lookup
+BillingMethods | lookup
+_EKPCompanies | support/config
+ErrorInfo | support/config
+TempTables | support/config
