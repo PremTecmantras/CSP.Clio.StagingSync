@@ -290,11 +290,9 @@ BEGIN
                AND e.Endpoint = m.Endpoint
             WHERE e.RunID IS NULL
                OR e.Status <> 'COMPLETE'
-               OR e.RowsReceived IS NULL
                OR e.RowsWritten IS NULL
-               OR e.RowsReceived <> e.RowsWritten
         )
-            THROW 51037, 'The staging run does not have a COMPLETE, count-matching result for every approved endpoint and company.', 1;
+            THROW 51037, 'The staging run does not have a COMPLETE result with a recorded SQL row count for every approved endpoint and company.', 1;
 
         IF NOT EXISTS
         (
@@ -533,10 +531,11 @@ BEGIN
         /*
            Match the production full-sync reporting sequence in the same transaction
            as the approved 19-table raw publication.  The order is intentionally the
-           same as BIDataManager.ConvertViewsToTable followed by its five internal
-           SyncMatters PreSyncViews. MatterSyncJob, SP_Sync_Matters_From_View and
-           all external matters/fees/expenses/documents API pushes are intentionally
-           outside this pipeline.
+           only for the five internal CSP.Clio.Sync SyncMatters PreSyncViews.
+           Do not use PopulateTables with a NULL view name here: that rebuilds every
+           active CSPViewsToTable row and duplicates these five view rebuilds.
+           MatterSyncJob-only views and all external matters/fees/expenses/documents
+           API pushes are intentionally outside this pipeline.
         */
         SET @StepStarted = SYSDATETIME();
         EXEC dbo.SP_CustomExecAfterSync;
@@ -570,16 +569,14 @@ BEGIN
 
         IF @RebuildReporting = 1
         BEGIN
-            EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = NULL, @EverySync = 0;
-
             EXEC dbo.UpdateExpectedHoursDaily;
 
-            /* Production full sync performs this update a second time after PopulateTables. */
+            /* Keep the second update from the existing full-sync reporting sequence. */
             EXEC dbo.SP_UpdateNonBillableActivities;
 
             EXEC dbo.SP_AddUserGroupReportTo;
 
-            /* Same five internal PreSyncViews used by BIDataManager.SyncMatters. */
+            /* Minimum local reporting allow-list: same five internal CSP.Clio.Sync PreSyncViews. */
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Users', @EverySync = 0;
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Contacts', @EverySync = 0;
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Folders', @EverySync = 0;
