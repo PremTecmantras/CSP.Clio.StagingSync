@@ -1,0 +1,616 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.props" Condition="Exists('..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.props')" />
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7B1C3F52-5A0E-4E7B-9C61-2D3A8E0F4A11}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>CSP.Clio.Sync</RootNamespace>
+    <AssemblyName>CSP.Clio.StagingSync</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <SccProjectName>SAK</SccProjectName>
+    <SccLocalPath>SAK</SccLocalPath>
+    <SccAuxPath>SAK</SccAuxPath>
+    <SccProvider>SAK</SccProvider>
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <!-- F5 in the Debug configuration runs the safe staging-only incremental poll.
+         The deployed Release EXE has no default argument and remains the daily full pipeline. -->
+    <StartArguments>--incremental</StartArguments>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="CSPSolutions.Exceptions">
+      <HintPath>References\CSPSolutions.Exceptions.dll</HintPath>
+    </Reference>
+    <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\EntityFramework.6.4.4\lib\net45\EntityFramework.dll</HintPath>
+    </Reference>
+    <Reference Include="EntityFramework.SqlServer, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\EntityFramework.6.4.4\lib\net45\EntityFramework.SqlServer.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Bcl.AsyncInterfaces, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\Microsoft.Bcl.AsyncInterfaces.8.0.0\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="RestSharp, Version=110.2.0.0, Culture=neutral, PublicKeyToken=598062e77f915f75, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\RestSharp.110.2.0\lib\net471\RestSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ComponentModel.DataAnnotations" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Memory.4.5.5\lib\net461\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Numerics.Vectors, Version=4.1.4.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Numerics.Vectors.4.5.0\lib\net46\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.Data.Entity" />
+    <Reference Include="System.Text.Encodings.Web, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Text.Encodings.Web.8.0.0\lib\net462\System.Text.Encodings.Web.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Json, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Text.Json.8.0.0\lib\net462\System.Text.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.Threading.Tasks.Extensions.4.5.4\lib\net461\System.Threading.Tasks.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ValueTuple, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\CSP.CLIO\packages\System.ValueTuple.4.5.0\lib\net47\System.ValueTuple.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Web" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ConsolidateClioCompanies.cs" />
+    <Compile Include="IncrementalSyncRunner.cs" />
+    <Compile Include="Data\Activity.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ActivityDescription.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ActivityRate.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ActivityType.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Allocation.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\AppCurrency.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BankAccount.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BankTransaction.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BankTransfer.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BIDataManager.cs" />
+    <Compile Include="Data\Bill.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillingMethod.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillKind.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillMatter.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillStateType.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillTheme.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillType.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\BillTypeName.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Calendar.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CalendarEntry.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Communication.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Contact.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ContactNote.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Conversation.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ConversationMessage.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CreditCard.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CreditMemo.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CSPViewsToTable.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Currency.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CustomAction.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CustomField.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CustomFieldSet.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\CustomFields_Mapping.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\C_EKPCompanies.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\dbo_VW_CreditMemos_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\DimRoleHistory_NameKey.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Document.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\DocumentAutomation.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\DocumentCategory.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\DocumentTemplate.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\EKPBIEntities_Partial.cs" />
+    <Compile Include="Data\EKPUserWorkday.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\EKP_Workdays.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Employee.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ENModel.Context.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>ENModel.Context.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ENModel.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ENModel.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>ENModel.edmx</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ErrorInfo.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ExcludedBill.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Expected_Hours_Daily.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\ExpenseCategory.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Folder.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Group.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Holidays_2024.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\LawyersMatterEarning.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Liability.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\LineItem.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Mapping.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Matter.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\MatterNote.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\MatterStatusType.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Matters_Detailed_Custom_Fields.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\parseJSON_Result.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\PartnersList.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\PracticeArea.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Ramadan_Periods.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Relationship.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Reminder.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\SyncedDocument.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TableSetting.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Task.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TaskCalendar.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TaskTemplate.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TaskTemplateList.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TaskType.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TempTable.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\TextSnippet.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\Timer.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\User.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UserInvitation.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UserRole.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UsersGroupReportTo.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UserType.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UtbmsCode.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\UtbmsSet.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_3rdPartyCost_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Activities_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Activities_TotalUnTracked_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ActivityDescriptions_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ActivitySummarized_NoBill_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ActivitySummarized_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ActivtiesPerDay_ForReference_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ActivtiesPerDay_ForReference_Test_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ActivtiesPerDay_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Allocations_BillReceipts_CY_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Allocations_BillReceipts_PY_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Allocations_BillReceipts_Summary_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Allocations_BillReceipts_Summary_Union_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Allocations_BillReceipts_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_BankTransactions_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Billing_ByPartner_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Bills_Alloc_Test_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Bills_Matters_LineItems_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Bills_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Bill_Details_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\vw_Bridge_BillPartner_Participation_MatterPartner_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\vw_Bridge_BillPartner_Participation_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Clients_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Collection_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Contacts_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_ContractValueMultiYear_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_LineItems_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Matters_Activities_Detailed_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Matters_Activities_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Matters_Detailed_For_Reporting_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Matters_Detailed_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Matters_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MatterUserProfitability_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Matter_Notes_Data_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_AgingReport_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_BilledTime_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_CreditMemo_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_NetCreditMemo_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_Net_Billed_Time_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_Net_Collection_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_MegaTable_WeeklyCollection_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_OriginationCalculationNew_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_OriginationCalculation_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Relationships_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Remuneration_ByPaymentDate_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Remuneration_Details_Internal_Use_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Tasks_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_UntrackedPerDayTest_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\VW_Users_Table.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Data\WebHook.cs">
+      <DependentUpon>ENModel.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Program.cs" />
+    <Compile Include="PipelineValidation.cs" />
+    <Compile Include="ProductionPublisher.cs" />
+    <Compile Include="RunConsoleLogger.cs" />
+    <Compile Include="StagingAudit.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\ClioDocumentClient.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <DependentUpon>Settings.settings</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+    <EntityDeploy Include="Data\ENModel.edmx">
+      <Generator>EntityModelCodeGenerator</Generator>
+      <LastGenOutput>ENModel.Designer.cs</LastGenOutput>
+    </EntityDeploy>
+    <None Include="Data\ENModel.edmx.diagram">
+      <DependentUpon>ENModel.edmx</DependentUpon>
+    </None>
+    <None Include="packages.config" />
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="10_Create_Incremental_Sync_Control.sql" />
+    <Content Include="08_Clear_Clio_Staging_Control_Tables.sql" />
+    <Content Include="Data\ENModel.Context.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <LastGenOutput>ENModel.Context.cs</LastGenOutput>
+      <DependentUpon>ENModel.edmx</DependentUpon>
+    </Content>
+    <Content Include="Data\ENModel.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <DependentUpon>ENModel.edmx</DependentUpon>
+      <LastGenOutput>ENModel.cs</LastGenOutput>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CSP.CLIO\CSP.Clio.API\CSP.Clio.API.csproj">
+      <Project>{fccfb613-0d02-47f4-8feb-565ff66eb5a4}</Project>
+      <Name>CSP.Clio.API</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include=".NETFramework,Version=v4.8">
+      <Visible>False</Visible>
+      <ProductName>Microsoft .NET Framework 4.8 %28x86 and x64%29</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.props')" Text="$([System.String]::Format('$(ErrorText)', '..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.props'))" />
+    <Error Condition="!Exists('..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.targets'))" />
+  </Target>
+  <Import Project="..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.targets" Condition="Exists('..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.targets')" />
+</Project>
