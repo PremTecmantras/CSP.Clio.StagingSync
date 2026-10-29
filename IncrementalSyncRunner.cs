@@ -93,27 +93,63 @@ namespace CSP.Clio.Sync
         async Task RunConfiguredEndpoints(Guid runId, Guid companyId, string companyName, string bearerToken,
             ClioPageStreamClient pageClient, BIDataManager dataManager)
         {
+            if (IsEnabled("PracticeAreas"))
+                await RunEndpoint<PracticeAreaData>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "PracticeAreas", "GetPracticeAreas", "practice_areas", x => dataManager.SavePracticeAreas(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("Activities"))
                 await RunEndpoint<ActivityData>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "Activities", "GetActivities", "activities", x => dataManager.SaveActivity(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("Calendars"))
+                await RunEndpoint<CalenderItem>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "Calendars", "GetCalender", "calendars", x => dataManager.SaveCalender(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("CalendarEntries"))
                 await RunEndpoint<CalenderEntry>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "CalendarEntries", "GetCalenderEntries", "calendar_entries", x => dataManager.SaveCalenderEntries(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("Relationships"))
+                await RunEndpoint<RelationshipDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "Relationships", "GetRelationships", "relationships", x => dataManager.SaveRelationship(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("Tasks"))
                 await RunEndpoint<TaskDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "Tasks", "GetTasks", "tasks", x => dataManager.SaveTasks(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("TaskTypes"))
+                await RunEndpoint<TaskTypeDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "TaskTypes", "GetTaskTypes", "task_types", x => dataManager.SaveTaskTypes(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("Matters"))
                 await RunEndpoint<MatterDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "Matters", "GetMatters", "matters", x => dataManager.SaveMatters(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("Bills"))
                 await RunEndpoint<BillModelModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "Bills", "GetBills", "bills", x => dataManager.SaveBills(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("BankTransactions"))
+                await RunEndpoint<BankTransactionModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "BankTransactions", "GetBankTransactions", "bank_transactions", x => dataManager.SaveBankTransactions(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("CustomFields"))
+                await RunEndpoint<CustomFieldData>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "CustomFields", "GetCustomFields", "custom_fields", x => dataManager.SaveCustomFields(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("CustomFieldSets"))
+                await RunEndpoint<CustomFieldSets>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "CustomFieldSets", "GetCustomFieldSets", "custom_field_sets", x => dataManager.SaveCustomFieldSets(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("Folders"))
                 await RunEndpoint<FolderModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "Folders", "GetFolders", "folders", x => dataManager.SaveFolders(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("LineItems"))
+                await RunEndpoint<LineItemModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "LineItems", "GetLineItems", "line_items", x => dataManager.SaveLineItems(x, companyId)).ConfigureAwait(false);
             if (IsEnabled("Contacts"))
                 await RunEndpoint<ContactDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
                     "Contacts", "GetContacts", "contacts", x => dataManager.SaveContacts(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("Allocations"))
+                await RunEndpoint<AllocationsModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "Allocations", "GetAllocations", "allocations", x => dataManager.SaveAllocations(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("Users"))
+                await RunEndpoint<UserDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "Users", "GetUsers", "users", x => dataManager.SaveUsers(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("ActivityDescriptions"))
+                await RunEndpoint<ActivityDescriptionModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "ActivityDescriptions", "GetActivityDescription", "activity_descriptions", x => dataManager.SaveActivityDescription(x, companyId)).ConfigureAwait(false);
+            if (IsEnabled("MatterNotes"))
+                await RunEndpoint<NoteDataModel>(runId, companyId, companyName, bearerToken, pageClient, dataManager,
+                    "MatterNotes", "GetMatterNotes", "notes", x => dataManager.SaveMatterNotes(x, companyId)).ConfigureAwait(false);
         }
 
         async Task RunEndpoint<T>(Guid runId, Guid companyId, string companyName, string bearerToken,
@@ -175,7 +211,13 @@ namespace CSP.Clio.Sync
             if (string.IsNullOrWhiteSpace(raw))
                 throw new ConfigurationErrorsException("AppSetting 'IncrementalEndpoints' is missing or empty.");
 
-            var allowed = new HashSet<string>(new[] { "Activities", "CalendarEntries", "Tasks", "Matters", "Bills", "Folders", "Contacts" }, StringComparer.OrdinalIgnoreCase);
+            var allowed = new HashSet<string>(new[]
+            {
+                "PracticeAreas", "Activities", "Calendars", "CalendarEntries", "Relationships",
+                "Tasks", "TaskTypes", "Matters", "Bills", "BankTransactions", "CustomFields",
+                "CustomFieldSets", "Folders", "LineItems", "Contacts", "Allocations", "Users",
+                "ActivityDescriptions", "MatterNotes"
+            }, StringComparer.OrdinalIgnoreCase);
             var endpoints = raw.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (endpoints.Count == 0 || endpoints.Any(x => !allowed.Contains(x)))
                 throw new ConfigurationErrorsException("IncrementalEndpoints may only contain: " + string.Join(", ", allowed.OrderBy(x => x)) + ".");
