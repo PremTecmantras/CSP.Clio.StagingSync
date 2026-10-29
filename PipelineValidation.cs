@@ -127,16 +127,16 @@ ORDER BY CompanyID", staging))
                                         " do not match audit RowsWritten " + auditedRows + ".");
                                 }
 
-                                var differencePct = PercentageDifference(stageRows, productionRows);
-                                var result = differencePct <= maximumDifferencePct ? "PASS" : "REVIEW";
+                                var shortfallPct = ProductionShortfallPct(stageRows, productionRows);
+                                var result = shortfallPct <= maximumDifferencePct ? "PASS" : "REVIEW";
                                 Console.WriteLine(string.Format(CultureInfo.InvariantCulture,
-                                    "{0,-22} {1} | stage {2,8} | production {3,8} | difference {4,7:0.00}% | {5}",
-                                    mapping.Key, companyId, stageRows, productionRows, differencePct, result));
+                                    "{0,-22} {1} | stage {2,8} | production {3,8} | production shortfall {4,7:0.00}% | {5}",
+                                    mapping.Key, companyId, stageRows, productionRows, shortfallPct, result));
 
-                                if (differencePct > maximumDifferencePct)
+                                if (shortfallPct > maximumDifferencePct)
                                 {
-                                    failures.Add(mapping.Key + " / " + companyId + ": count difference " +
-                                        differencePct.ToString("0.00", CultureInfo.InvariantCulture) + "% exceeds " +
+                                    failures.Add(mapping.Key + " / " + companyId + ": production shortfall " +
+                                        shortfallPct.ToString("0.00", CultureInfo.InvariantCulture) + "% exceeds " +
                                         maximumDifferencePct.ToString("0.00", CultureInfo.InvariantCulture) + "%.");
                                 }
                             }
@@ -293,15 +293,12 @@ FROM control.PublishRun ORDER BY StartedAtUTC DESC");
             return result;
         }
 
-        static decimal PercentageDifference(long stageRows, long productionRows)
+        static decimal ProductionShortfallPct(long stageRows, long productionRows)
         {
-            if (productionRows == 0)
-                return stageRows == 0 ? 0m : 100m;
-
             if (stageRows >= productionRows)
                 return 0m;
 
-            return Math.Abs((decimal)stageRows - productionRows) * 100m / productionRows;
+            return (decimal)(productionRows - stageRows) * 100m / productionRows;
         }
 
         static void RequireRawTable(SqlConnection connection, string tableName, string databaseLabel)
