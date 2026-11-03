@@ -63,11 +63,11 @@ For retained failures, a single staging buffer cannot preserve 7-14 days of snap
 
 ## Publication and PopulateTables decision
 
-The publisher commits the allowlisted raw production tables and the full production reporting sequence in one explicit transaction. The implementation sequence matches the existing full-sync `ConvertViewsToTable` and `SyncMatters` order. A failure must roll back the raw and reporting changes before `control.PublishRun` is marked failed.
+The publisher commits the allowlisted raw production tables and the reporting sequence in one explicit transaction. It refreshes the five internal `CSP.Clio.Sync` views and the three reporting views also refreshed by `MatterSyncJob`, using explicit `PopulateTables` view parameters. It does not run MatterSyncJob's external matters, fees, expenses, or documents API calls. A failure must roll back the raw and reporting changes before `control.PublishRun` is marked failed.
 
 The following transaction boundary must be tested before production cutover:
 
-* Execute the allowlisted raw replacement, `SP_CustomExecAfterSync`, `SP_InsertIntoMattersDetailedCustomFields`, `PopulateMatterNotesView`, both `SP_UpdateNonBillableActivities` calls, `PopulateTables`, `UpdateExpectedHoursDaily`, `SP_AddUserGroupReportTo`, the five internal `SyncMatters` view materialisations, and reconciliation under one proven outer transaction, committing only after all succeed. External `MatterSyncJob` API processing is intentionally excluded.
+* Execute the allowlisted raw replacement, `SP_CustomExecAfterSync`, `SP_InsertIntoMattersDetailedCustomFields`, `PopulateMatterNotesView`, both `SP_UpdateNonBillableActivities` calls, `UpdateExpectedHoursDaily`, `SP_AddUserGroupReportTo`, all eight explicitly named view materialisations, and reconciliation under one proven outer transaction, committing only after all succeed. External `MatterSyncJob` API processing is intentionally excluded.
 * Audit every called procedure, dynamic statement and error path for transaction compatibility. Test the existing per-table swap and CATCH rollback behavior; do not assume that a wrapper transaction is sufficient. Assess lock duration and log space for the full materialization.
 * If this boundary proves impractical, do not enable automatic publication. Build and validate the complete reporting candidate outside live objects, using a consistent copy of required business inputs, then atomically promote the approved raw and reporting generation. Cross-database references must be retargeted deliberately and local business tables must remain owned by production.
 

@@ -529,13 +529,9 @@ BEGIN
         DEALLOCATE publish_cursor;
 
         /*
-           Match the production full-sync reporting sequence in the same transaction
-           as the approved 19-table raw publication.  The order is intentionally the
-           only for the five internal CSP.Clio.Sync SyncMatters PreSyncViews.
-           Do not use PopulateTables with a NULL view name here: that rebuilds every
-           active CSPViewsToTable row and duplicates these five view rebuilds.
-           MatterSyncJob-only views and all external matters/fees/expenses/documents
-           API pushes are intentionally outside this pipeline.
+           Rebuild all active reporting tables exactly as the old CSP.Clio.Sync full sync does,
+           in the same transaction as the approved 19-table raw publication. MatterSyncJob's
+           external matters/fees/expenses/documents API pushes remain outside this pipeline.
         */
         SET @StepStarted = SYSDATETIME();
         EXEC dbo.SP_CustomExecAfterSync;
@@ -569,20 +565,28 @@ BEGIN
 
         IF @RebuildReporting = 1
         BEGIN
+            /*
+               Same sequence and order as CSP.Clio.Sync BIDataManager.ConvertViewsToTable.
+               PopulateTables with no view name rebuilds EVERY active CSPViewsToTable row in
+               ExecutionOrder, which the dependent *_Table reporting tables require.
+            */
+            EXEC dbo.PopulateTables;
+
             EXEC dbo.UpdateExpectedHoursDaily;
 
-            /* Keep the second update from the existing full-sync reporting sequence. */
             EXEC dbo.SP_UpdateNonBillableActivities;
 
             EXEC dbo.SP_AddUserGroupReportTo;
 
-            /* Minimum local reporting allow-list: same five internal CSP.Clio.Sync PreSyncViews. */
+            /* CSP.Clio.Sync SyncMatters PreSyncViews, run after ConvertViewsToTable. */
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Users', @EverySync = 0;
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Contacts', @EverySync = 0;
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Folders', @EverySync = 0;
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_PracticeAreas', @EverySync = 0;
             EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Matters', @EverySync = 0;
         END;
+
+        EXEC dbo.SP_CleanData;
 
         UPDATE control.PublishRun
         SET Status = 'COMPLETE', CompletedAtUTC = SYSUTCDATETIME()

@@ -548,6 +548,7 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <None Include=".github\copilot-instructions.md" />
     <None Include="App.config" />
     <EntityDeploy Include="Data\ENModel.edmx">
       <Generator>EntityModelCodeGenerator</Generator>
@@ -575,6 +576,7 @@
       <DependentUpon>ENModel.edmx</DependentUpon>
       <LastGenOutput>ENModel.cs</LastGenOutput>
     </Content>
+    <Content Include="Services\PopulateMatterSyncJobRemainingViews.sql" />
   </ItemGroup>
   <ItemGroup>
     <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />

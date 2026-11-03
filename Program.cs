@@ -37,6 +37,14 @@ namespace CSP.Clio.Sync
 
         static async Task<int> Main(string[] args)
         {
+            // Raw tables store dates as text via DateTime.ToString(); the reporting views CAST that text under us_english.
+            // Pin the culture to match the production EXE so day-first regional settings cannot change the stored text.
+            var storageCulture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+            System.Globalization.CultureInfo.DefaultThreadCurrentCulture = storageCulture;
+            System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = storageCulture;
+            System.Threading.Thread.CurrentThread.CurrentCulture = storageCulture;
+            System.Threading.Thread.CurrentThread.CurrentUICulture = storageCulture;
+
             try
             {
                 using (RunConsoleLogger.Start(HasArgument(args, "--incremental")))
