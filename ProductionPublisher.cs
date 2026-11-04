@@ -26,10 +26,13 @@ namespace CSP.Clio.Sync
                 using (var command = new SqlCommand(ProcedureName, connection))
                 {
                     command.CommandType = CommandType.StoredProcedure;
-                    command.CommandTimeout = 3600;
+                    // The publisher now only copies tables (no reporting rebuild), but it is one transaction over ~1.5M rows.
+                    var timeoutMinutes = 0;
+                    int.TryParse(ConfigurationManager.AppSettings["PublishTimeoutMinutes"], out timeoutMinutes);
+                    command.CommandTimeout = timeoutMinutes > 0 ? timeoutMinutes * 60 : 3600;
                     command.Parameters.Add("@RunID", SqlDbType.UniqueIdentifier).Value = runId;
                     command.Parameters.Add("@DryRun", SqlDbType.Bit).Value = false;
-                    command.Parameters.Add("@RebuildReporting", SqlDbType.Bit).Value = true;
+                    command.Parameters.Add("@PublishReporting", SqlDbType.Bit).Value = true;
                     command.ExecuteNonQuery();
                 }
 
@@ -52,6 +55,41 @@ FROM control.PublishRun WHERE SourceRunID=@r ORDER BY StartedAtUTC DESC", connec
                 }
             }
             Console.WriteLine("PUBLISH COMPLETE: production raw data and requested reporting rebuild completed.");
+        }
+
+        /// <summary>Runs the publisher with @DryRun = 1: all checks and the plan are produced, nothing is changed.</summary>
+        public static void DryRun(Guid runId)
+        {
+            using (var connection = OpenGuarded())
+            {
+                if (!ProcedureExists(connection))
+                    throw new InvalidOperationException("Required production procedure " + ProcedureName + " is missing.");
+
+                Console.WriteLine("Dry run of " + ProcedureName + " for RunID " + runId + " (no data will change).");
+                using (var command = new SqlCommand(ProcedureName, connection) { CommandType = CommandType.StoredProcedure, CommandTimeout = 1800 })
+                {
+                    command.Parameters.Add("@RunID", SqlDbType.UniqueIdentifier).Value = runId;
+                    command.Parameters.Add("@DryRun", SqlDbType.Bit).Value = true;
+                    command.Parameters.Add("@PublishReporting", SqlDbType.Bit).Value = true;
+                    using (var reader = command.ExecuteReader())
+                    {
+                        var resultSet = 0;
+                        do
+                        {
+                            resultSet++;
+                            if (resultSet > 3) continue; // summary, raw plan and reporting plan; the per-company audit rows are noise
+                            while (reader.Read())
+                            {
+                                var parts = new string[reader.FieldCount];
+                                for (var i = 0; i < reader.FieldCount; i++)
+                                    parts[i] = reader.GetName(i) + "=" + Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture);
+                                Console.WriteLine("  " + string.Join(" | ", parts));
+                            }
+                        } while (reader.NextResult());
+                    }
+                }
+            }
+            Console.WriteLine("PUBLISH DRY RUN COMPLETE: all publisher checks passed and no data was changed.");
         }
 
         public static void PrintSqlErrors(SqlException exception)

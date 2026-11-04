@@ -27,15 +27,19 @@ namespace CSP.Clio.Sync
             Console.WriteLine("Run started (local time): " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         }
 
-        public static RunConsoleLogger Start(bool incremental)
+        public static RunConsoleLogger Start(bool incremental, bool fullCheck = false, bool reconcile = false)
         {
             var logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
             Directory.CreateDirectory(logDirectory);
 
             // FileMode.Create (used by StreamWriter) replaces the previous run's log.
-            var fileName = incremental
-                ? "CSP.Clio.StagingSync-incremental-last-run.txt"
-                : "CSP.Clio.StagingSync-last-run.txt";
+            var fileName = reconcile
+                ? "CSP.Clio.StagingSync-reconcile-deletes-last-run.txt"
+                : fullCheck
+                ? "CSP.Clio.StagingSync-full-check-last-run.txt"
+                : incremental
+                    ? "CSP.Clio.StagingSync-incremental-last-run.txt"
+                    : "CSP.Clio.StagingSync-last-run.txt";
             return new RunConsoleLogger(Path.Combine(logDirectory, fileName));
         }
 

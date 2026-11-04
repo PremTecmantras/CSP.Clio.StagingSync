@@ -546,6 +546,18 @@ BEGIN
         )
             THROW 51044, 'SP_CustomExecAfterSync did not populate Currency for one or more published bills.', 1;
 
+        /*
+           VW_Matters_Detailed reads VW_Matters_Table, VW_Contacts_Table and VW_Users_Table.
+           Refresh them first, otherwise matters created since the last rebuild get no
+           Matters_Detailed_Custom_Fields row (blank originators, missing from PartnerFact).
+        */
+        IF @RebuildReporting = 1
+        BEGIN
+            EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Users', @EverySync = 0;
+            EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Contacts', @EverySync = 0;
+            EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'VW_Matters', @EverySync = 0;
+        END;
+
         EXEC dbo.SP_InsertIntoMattersDetailedCustomFields;
 
         EXEC dbo.PopulateMatterNotesView;

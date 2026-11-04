@@ -119,6 +119,10 @@
   <ItemGroup>
     <Compile Include="ConsolidateClioCompanies.cs" />
     <Compile Include="IncrementalSyncRunner.cs" />
+    <Compile Include="DeleteReconciler.cs" />
+    <Compile Include="FullCheckRunner.cs" />
+    <Compile Include="PipelineLock.cs" />
+    <Compile Include="ReportingBuilder.cs" />
     <Compile Include="Data\Activity.cs">
       <DependentUpon>ENModel.tt</DependentUpon>
     </Compile>

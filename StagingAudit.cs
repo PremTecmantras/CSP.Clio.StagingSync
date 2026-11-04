@@ -112,7 +112,9 @@ namespace CSP.Clio.Sync
         }
 
         /// <summary>Checks the bootstrap info and that no run is already RUNNING.</summary>
-        public void PreflightOrThrow(bool abandonStale)
+        /// <param name="pipelineLockHeld">True when the caller already holds the pipeline lock: a RUNNING incremental row then
+        /// belongs to a process that died (for example a killed or rebooted task), so it is closed as ABANDONED, not treated as a conflict.</param>
+        public void PreflightOrThrow(bool abandonStale, bool pipelineLockHeld = false)
         {
             using (var c = Open())
             {
@@ -128,7 +130,15 @@ SELECT CASE WHEN OBJECT_ID(N'control.IncrementalSyncRun', N'U') IS NULL THEN 0
             WHEN EXISTS (SELECT 1 FROM control.IncrementalSyncRun WHERE Status='RUNNING') THEN 1
             ELSE 0 END"));
                 if (incrementalRunning > 0)
-                    throw new InvalidOperationException("An incremental staging sync is RUNNING. Do not start or abandon a full extraction until it has completed or has been investigated.");
+                {
+                    if (!pipelineLockHeld)
+                        throw new InvalidOperationException("An incremental staging sync is RUNNING. Do not start or abandon a full extraction until it has completed or has been investigated.");
+                    Exec(c, @"UPDATE control.IncrementalSyncResult SET Status='FAILED', CompletedAtUTC=SYSUTCDATETIME(),
+                            ErrorMessage=N'Abandoned: the process ended before this endpoint finished.' WHERE Status='RUNNING';
+                        UPDATE control.IncrementalSyncRun SET Status='ABANDONED', CompletedAtUTC=SYSUTCDATETIME(),
+                            ErrorMessage=N'Abandoned: the process ended before the run finished.' WHERE Status='RUNNING';");
+                    Console.WriteLine("Closed a stale RUNNING incremental run as ABANDONED (the pipeline lock proves it is not alive).");
+                }
 
                 var running = Convert.ToInt32(Scalar(c, "SELECT COUNT(*) FROM control.SyncRun WHERE Status='RUNNING'"));
                 if (running > 0)
@@ -194,6 +204,82 @@ IF OBJECT_ID(N'control.IncrementalSyncRun', N'U') IS NOT NULL
                     RunID = newRunId;
                 }
                 catch { tx.Rollback(); throw; }
+            }
+        }
+
+        /// <summary>
+        /// Records the current staging tables as an approved full snapshot for the publisher: an EXTRACTED FULL run with a
+        /// COMPLETE result per company and endpoint whose RowsWritten is the row count in staging right now. The caller holds
+        /// the pipeline lock, so the counts cannot change before the publisher re-checks them (check 51042).
+        /// </summary>
+        public Guid RecordSnapshotRun(IEnumerable<Guid> companyIds)
+        {
+            var snapshotRunId = Guid.NewGuid();
+            using (var c = Open())
+            using (var tx = c.BeginTransaction())
+            {
+                try
+                {
+                    if (Convert.ToInt32(Scalar2(c, tx, "SELECT COUNT(*) FROM control.SyncRun WHERE Status='RUNNING'")) > 0)
+                        throw new InvalidOperationException("A staging extraction is RUNNING; a snapshot cannot be recorded.");
+
+                    Exec2(c, tx, "INSERT control.SyncRun(RunID,Status,Mode,CompletedAtUTC) VALUES(@r,'EXTRACTED','FULL',SYSUTCDATETIME())",
+                        new SqlParameter("@r", snapshotRunId));
+                    foreach (var company in companyIds)
+                        foreach (var ep in EndpointManifest)
+                        {
+                            var rows = Convert.ToInt64(Scalar2(c, tx, "SELECT COUNT_BIG(*) FROM dbo." + Quote(ep.Value) + " WHERE CompanyID=@c",
+                                new SqlParameter("@c", company)));
+                            Exec2(c, tx, @"INSERT control.SyncEndpointResult(RunID,CompanyID,Endpoint,Status,RowsReceived,RowsWritten,PaginationComplete,StartedAtUTC,CompletedAtUTC)
+                                VALUES(@r,@c,@e,'COMPLETE',@n,@n,1,SYSUTCDATETIME(),SYSUTCDATETIME())",
+                                new SqlParameter("@r", snapshotRunId), new SqlParameter("@c", company),
+                                new SqlParameter("@e", ep.Key), new SqlParameter("@n", rows));
+                        }
+                    tx.Commit();
+                    return snapshotRunId;
+                }
+                catch { tx.Rollback(); throw; }
+            }
+        }
+
+        /// <summary>
+        /// After a full extraction, the hourly incremental sync must continue from the moment that extraction started, not
+        /// from the default look-back. Sets every company/endpoint watermark to this run's start time.
+        /// </summary>
+        public void SeedIncrementalWatermarks()
+        {
+            using (var c = Open())
+            {
+                if (Convert.ToInt32(Scalar(c, "SELECT CASE WHEN OBJECT_ID(N'control.IncrementalWatermark', N'U') IS NULL THEN 0 ELSE 1 END")) == 0)
+                    return;
+                var started = (DateTime)Scalar(c, "SELECT StartedAtUTC FROM control.SyncRun WHERE RunID=@r", new SqlParameter("@r", RunID));
+                var seeded = 0;
+                foreach (var companyId in Companies(c))
+                    foreach (var ep in EndpointManifest)
+                        seeded += Exec(c, @"MERGE control.IncrementalWatermark AS t
+                            USING (SELECT @c AS CompanyID, @e AS Endpoint) AS s ON t.CompanyID=s.CompanyID AND t.Endpoint=s.Endpoint
+                            WHEN MATCHED THEN UPDATE SET LastSuccessfulToUTC=@w, UpdatedAtUTC=SYSUTCDATETIME()
+                            WHEN NOT MATCHED THEN INSERT(CompanyID, Endpoint, LastSuccessfulToUTC) VALUES(@c, @e, @w);",
+                            new SqlParameter("@c", companyId), new SqlParameter("@e", ep.Key), new SqlParameter("@w", started));
+                Console.WriteLine("Incremental watermarks set to the extraction start (" + started.ToString("u") + ") for " + seeded + " company/endpoint pair(s).");
+            }
+        }
+
+        static System.Collections.Generic.List<Guid> Companies(SqlConnection c)
+        {
+            var ids = new System.Collections.Generic.List<Guid>();
+            using (var cmd = new SqlCommand("SELECT ID FROM dbo._EKPCompanies WHERE Active=1", c))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) ids.Add(r.GetGuid(0));
+            return ids;
+        }
+
+        static object Scalar2(SqlConnection c, SqlTransaction tx, string sql, params SqlParameter[] p)
+        {
+            using (var cmd = new SqlCommand(sql, c, tx) { CommandTimeout = 600 })
+            {
+                if (p != null && p.Length > 0) cmd.Parameters.AddRange(p);
+                return cmd.ExecuteScalar();
             }
         }
 

@@ -36,7 +36,12 @@ namespace CSP.Clio.Sync
         {
             EnsureControlSchema();
             EnsureNoFullRunIsActive();
-            EnsureNoIncrementalRunIsActive();
+            // The caller holds the pipeline lock, so any RUNNING row belongs to a process that died.
+            AbandonStaleIncrementalRuns();
+            // The reporting build is opt-in here: in the 5-minute task it is off, and the manual --full-check builds the reports.
+            var rebuildEnabled = ReadBoolean("IncrementalRebuildReporting", false);
+            var rebuildPending = rebuildEnabled && PreviousRebuildFailed();
+            var pollTimer = System.Diagnostics.Stopwatch.StartNew();
 
             var runId = Guid.NewGuid();
             StartRun(runId);
@@ -77,9 +82,36 @@ namespace CSP.Clio.Sync
 
                 var failedResults = CountFailedResults(runId);
                 allSucceeded = allSucceeded && failedResults == 0;
-                FinishRun(runId, allSucceeded, allSucceeded ? null : "One or more company/endpoint incremental polls failed.");
+                string failure = allSucceeded ? null : "One or more company/endpoint incremental polls failed.";
+
+                // Rebuild the reporting tables only when raw rows changed, or when the previous run's rebuild did not finish.
+                Console.WriteLine("Incremental polling took " + pollTimer.Elapsed.ToString(@"mm\:ss") + " (" + SumChangedRows(runId) + " changed raw row(s)).");
+                if (rebuildEnabled)
+                {
+                    var changedRows = SumChangedRows(runId);
+                    if (changedRows > 0 || rebuildPending)
+                    {
+                        Console.WriteLine("Changed raw rows: " + changedRows + (rebuildPending ? " (previous reporting build did not finish)." : "."));
+                        try
+                        {
+                            new ReportingBuilder(_connectionString).Build();
+                        }
+                        catch (Exception ex)
+                        {
+                            allSucceeded = false;
+                            failure = (failure == null ? "" : failure + " ") + ex.Message;
+                            Console.Error.WriteLine("REPORTING BUILD FAILED: " + ex.Message);
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("No raw rows changed; reporting tables are up to date.");
+                    }
+                }
+
+                FinishRun(runId, allSucceeded, failure);
                 Console.WriteLine(allSucceeded
-                    ? "INCREMENTAL SYNC COMPLETE: staging rows were updated. No production publication was attempted."
+                    ? "INCREMENTAL SYNC COMPLETE: staging raw tables are up to date. The reporting tables are rebuilt by --full-check. No production publication was attempted."
                     : "INCREMENTAL SYNC FAILED: review control.IncrementalSyncResult and the run log. No production publication was attempted.");
                 return allSucceeded ? 0 : 1;
             }
@@ -187,7 +219,7 @@ namespace CSP.Clio.Sync
             }
         }
 
-        async Task<string> GetBearerTokenAsync(BIDataManager dataManager, C_EKPCompanies company)
+        internal static async Task<string> GetBearerTokenAsync(BIDataManager dataManager, C_EKPCompanies company)
         {
             if (!await Program.IsTokenExpired(company.ClioToken).ConfigureAwait(false))
                 return "Bearer " + company.ClioToken;
@@ -256,11 +288,42 @@ namespace CSP.Clio.Sync
                 cmd.ExecuteNonQuery();
         }
 
-        void EnsureNoIncrementalRunIsActive()
+        void AbandonStaleIncrementalRuns()
         {
             using (var c = Open())
-            using (var cmd = new SqlCommand("IF EXISTS (SELECT 1 FROM control.IncrementalSyncRun WHERE Status='RUNNING') THROW 51072, 'A previous incremental sync is still RUNNING. Investigate it before starting another incremental task.', 1;", c))
+            using (var cmd = new SqlCommand(@"UPDATE control.IncrementalSyncResult SET Status='FAILED', CompletedAtUTC=SYSUTCDATETIME(),
+                    ErrorMessage=N'Abandoned: the process ended before this endpoint finished.' WHERE Status='RUNNING';
+                UPDATE control.IncrementalSyncRun SET Status='ABANDONED', CompletedAtUTC=SYSUTCDATETIME(),
+                    ErrorMessage=N'Abandoned: the process ended before the run finished.' WHERE Status='RUNNING';", c))
                 cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>True when the latest finished run failed while rebuilding the reporting tables, or was abandoned.</summary>
+        bool PreviousRebuildFailed()
+        {
+            using (var c = Open())
+            using (var cmd = new SqlCommand(@"SELECT TOP 1 CASE WHEN Status = 'ABANDONED' OR ErrorMessage LIKE N'%Reporting build failed%' THEN 1 ELSE 0 END
+                FROM control.IncrementalSyncRun WHERE Status <> 'RUNNING' ORDER BY StartedAtUTC DESC", c))
+            {
+                var value = cmd.ExecuteScalar();
+                return value != null && value != DBNull.Value && Convert.ToInt32(value) == 1;
+            }
+        }
+
+        long SumChangedRows(Guid runId)
+        {
+            using (var c = Open())
+            using (var cmd = new SqlCommand("SELECT ISNULL(SUM(RowsReceived), 0) FROM control.IncrementalSyncResult WHERE IncrementalRunID=@r", c))
+            {
+                cmd.Parameters.AddWithValue("@r", runId);
+                return Convert.ToInt64(cmd.ExecuteScalar());
+            }
+        }
+
+        static bool ReadBoolean(string name, bool defaultValue)
+        {
+            bool value;
+            return bool.TryParse(ConfigurationManager.AppSettings[name], out value) ? value : defaultValue;
         }
 
         void StartRun(Guid runId)
