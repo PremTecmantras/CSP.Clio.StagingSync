@@ -125,7 +125,7 @@ namespace CSP.Clio.Sync
                 audit = StagingAudit.CreateGuarded();
                 Console.WriteLine("Target: " + audit.Describe());
                 if (HasArgument(args, "--full-check"))
-                    return await FullCheckRunner.RunAsync(audit, HasArgument(args, "--confirm-publish"));
+                    return await FullCheckRunner.RunAsync(audit, HasArgument(args, "--confirm-publish"), !HasArgument(args, "--skip-deletes"));
                 if (HasArgument(args, "--reconcile-deletes"))
                     return await DeleteReconciler.RunCommandAsync(audit, HasArgument(args, "--apply"));
                 if (incrementalRequested)
@@ -303,7 +303,8 @@ namespace CSP.Clio.Sync
             Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check   Manual run: catch up, record snapshot, 10% check, publisher DRY RUN. Never extracts or clears.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check --confirm-publish  Same, then publish the snapshot to the target database.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes          Report records deleted in Clio (full ID listing + HTTP 404 confirmation). Changes nothing.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes --apply  Move confirmed deletions to the *_Deleted tables and rebuild the reporting tables.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes --apply  Move confirmed deletions to the *_Deleted tables (run --full-check afterwards).");
+            Console.WriteLine("  --full-check always applies the delete reconciliation first (adds roughly 20-40 minutes). Add --skip-deletes to leave it out for one run.");
         }
 
         /// <returns>false if there was nothing to process.</returns>

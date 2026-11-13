@@ -16,13 +16,17 @@ namespace CSP.Clio.Sync
     {
         const decimal MaximumDifferencePct = 10m;
 
-        public static async Task<int> RunAsync(StagingAudit audit, bool publish)
+        public static async Task<int> RunAsync(StagingAudit audit, bool publish, bool reconcileDeletes = true)
         {
-            using (var pipelineLock = PipelineLock.TryAcquire(audit.ConnectionString))
+            int waitMinutes;
+            if (!int.TryParse(System.Configuration.ConfigurationManager.AppSettings["FullCheckLockWaitMinutes"], out waitMinutes))
+                waitMinutes = 10;
+            if (waitMinutes < 0) waitMinutes = 0;
+            using (var pipelineLock = PipelineLock.TryAcquireWithWait(audit.ConnectionString, TimeSpan.FromMinutes(waitMinutes)))
             {
                 if (pipelineLock == null)
                 {
-                    Console.Error.WriteLine("FULL CHECK BLOCKED: an incremental sync or another full check is running. Wait for it to finish and run again.");
+                    Console.Error.WriteLine("FULL CHECK BLOCKED: an incremental sync or another full check is still running after waiting " + waitMinutes + " minute(s). Wait for it to finish and run again.");
                     return 1;
                 }
 
@@ -34,6 +38,26 @@ namespace CSP.Clio.Sync
                 {
                     Console.Error.WriteLine("FULL CHECK STOPPED: the catch-up did not complete, so staging cannot be approved.");
                     return 1;
+                }
+
+                if (reconcileDeletes)
+                {
+                    // Deletions must reach the raw tables BEFORE the snapshot, so the reports and the target show them in this same run.
+                    Console.WriteLine("Step 1b/5: delete reconciliation (use --skip-deletes to leave it out): moving records deleted in Clio to the *_Deleted tables.");
+                    try
+                    {
+                        var result = await new DeleteReconciler(audit.ConnectionString, true).RunAsync().ConfigureAwait(false);
+                        if (result.Item2 != 0)
+                        {
+                            Console.Error.WriteLine("FULL CHECK STOPPED: delete reconciliation reported " + result.Item2 + " problem(s). Nothing was published; the target database keeps its last good data. Fix the problem, or run once with --skip-deletes.");
+                            return 1;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine("FULL CHECK STOPPED: delete reconciliation failed: " + ex.Message);
+                        return 1;
+                    }
                 }
 
                 Console.WriteLine("Step 2/5: recording the approved staging snapshot.");

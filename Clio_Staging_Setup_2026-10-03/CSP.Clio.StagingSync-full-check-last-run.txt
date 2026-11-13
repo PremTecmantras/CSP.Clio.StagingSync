@@ -1,0 +1,407 @@
+Run log: C:\CSP.CLIO.StagingSync\Debug\Logs\CSP.Clio.StagingSync-full-check-last-run.txt
+Run started (local time): 2026-11-05 21:00:00
+CSP Clio Staging Sync
+Target: EKPLegalCLIO / Clio_Staging as Windows auth
+Step 1/5: final incremental catch-up of the raw tables (staging only).
+Incremental RunID: 849f48c5-5ab3-4747-a61f-085d4e78ebd5
+Incremental endpoints: Activities, ActivityDescriptions, Allocations, BankTransactions, Bills, CalendarEntries, Calendars, Contacts, CustomFields, CustomFieldSets, Folders, LineItems, MatterNotes, Matters, PracticeAreas, Relationships, Tasks, TaskTypes, Users
+  Incremental PracticeAreas - OHLLP: 0 changed row(s).
+  Incremental Activities - OHLLP: 65 changed row(s).
+  Incremental Calendars - OHLLP: 0 changed row(s).
+  Incremental CalendarEntries - OHLLP: 0 changed row(s).
+  Incremental Relationships - OHLLP: 0 changed row(s).
+  Incremental Tasks - OHLLP: 1 changed row(s).
+  Incremental TaskTypes - OHLLP: 0 changed row(s).
+  Incremental Matters - OHLLP: 0 changed row(s).
+  Incremental Bills - OHLLP: 4 changed row(s).
+  Incremental BankTransactions - OHLLP: 7 changed row(s).
+  Incremental CustomFields - OHLLP: 2 changed row(s).
+  Incremental CustomFieldSets - OHLLP: 0 changed row(s).
+  Incremental Folders - OHLLP: 6 changed row(s).
+  Incremental LineItems - OHLLP: 33 changed row(s).
+  Incremental Contacts - OHLLP: 3 changed row(s).
+  Incremental Allocations - OHLLP: 2 changed row(s).
+  Incremental Users - OHLLP: 1 changed row(s).
+  Incremental ActivityDescriptions - OHLLP: 0 changed row(s).
+  Incremental MatterNotes - OHLLP: 0 changed row(s).
+  Incremental PracticeAreas - Riyadh: 0 changed row(s).
+  Incremental Activities - Riyadh: 338 changed row(s).
+  Incremental Calendars - Riyadh: 0 changed row(s).
+  Incremental CalendarEntries - Riyadh: 0 changed row(s).
+  Incremental Relationships - Riyadh: 0 changed row(s).
+  Incremental Tasks - Riyadh: 0 changed row(s).
+  Incremental TaskTypes - Riyadh: 0 changed row(s).
+  Incremental Matters - Riyadh: 3 changed row(s).
+  Incremental Bills - Riyadh: 26 changed row(s).
+  Incremental BankTransactions - Riyadh: 11 changed row(s).
+  Incremental CustomFields - Riyadh: 0 changed row(s).
+  Incremental CustomFieldSets - Riyadh: 0 changed row(s).
+  Incremental Folders - Riyadh: 0 changed row(s).
+  Incremental LineItems - Riyadh: 235 changed row(s).
+  Incremental Contacts - Riyadh: 17 changed row(s).
+  Incremental Allocations - Riyadh: 4 changed row(s).
+  Incremental Users - Riyadh: 0 changed row(s).
+  Incremental ActivityDescriptions - Riyadh: 0 changed row(s).
+  Incremental MatterNotes - Riyadh: 0 changed row(s).
+  Incremental PracticeAreas - Dubai: 0 changed row(s).
+  Incremental Activities - Dubai: 358 changed row(s).
+  Incremental Calendars - Dubai: 0 changed row(s).
+  Incremental CalendarEntries - Dubai: 0 changed row(s).
+  Incremental Relationships - Dubai: 0 changed row(s).
+  Incremental Tasks - Dubai: 0 changed row(s).
+  Incremental TaskTypes - Dubai: 0 changed row(s).
+  Incremental Matters - Dubai: 0 changed row(s).
+  Incremental Bills - Dubai: 7 changed row(s).
+  Incremental BankTransactions - Dubai: 10 changed row(s).
+  Incremental CustomFields - Dubai: 0 changed row(s).
+  Incremental CustomFieldSets - Dubai: 0 changed row(s).
+  Incremental Folders - Dubai: 0 changed row(s).
+  Incremental LineItems - Dubai: 265 changed row(s).
+  Incremental Contacts - Dubai: 1 changed row(s).
+  Incremental Allocations - Dubai: 1 changed row(s).
+  Incremental Users - Dubai: 0 changed row(s).
+  Incremental ActivityDescriptions - Dubai: 0 changed row(s).
+  Incremental MatterNotes - Dubai: 0 changed row(s).
+  Incremental PracticeAreas - Beirut: 0 changed row(s).
+  Incremental Activities - Beirut: 14 changed row(s).
+  Incremental Calendars - Beirut: 0 changed row(s).
+  Incremental CalendarEntries - Beirut: 0 changed row(s).
+  Incremental Relationships - Beirut: 0 changed row(s).
+  Incremental Tasks - Beirut: 0 changed row(s).
+  Incremental TaskTypes - Beirut: 0 changed row(s).
+  Incremental Matters - Beirut: 0 changed row(s).
+  Incremental Bills - Beirut: 1 changed row(s).
+  Incremental BankTransactions - Beirut: 3 changed row(s).
+  Incremental CustomFields - Beirut: 0 changed row(s).
+  Incremental CustomFieldSets - Beirut: 0 changed row(s).
+  Incremental Folders - Beirut: 0 changed row(s).
+  Incremental LineItems - Beirut: 0 changed row(s).
+  Incremental Contacts - Beirut: 0 changed row(s).
+  Incremental Allocations - Beirut: 1 changed row(s).
+  Incremental Users - Beirut: 0 changed row(s).
+  Incremental ActivityDescriptions - Beirut: 0 changed row(s).
+  Incremental MatterNotes - Beirut: 0 changed row(s).
+Incremental polling took 00:22 (1419 changed raw row(s)).
+INCREMENTAL SYNC COMPLETE: staging raw tables are up to date. The reporting tables are rebuilt by --full-check. No production publication was attempted.
+Step 1b/5: delete reconciliation (use --skip-deletes to leave it out): moving records deleted in Clio to the *_Deleted tables.
+Delete reconciliation (APPLY). Safety limit: 5% of a company's rows per endpoint.
+  Endpoint             Company     In table   In Clio   Missing   Result
+  (In table = rows in Clio_Staging; In Clio = rows Clio returns now; Missing = rows we hold that Clio no longer has. Missing 0 is correct.)
+  ... reading the Activities ID list from Clio for OHLLP (628 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Activities           OHLLP          628       734         0   OK
+  ... reading the ActivityDescriptions ID list from Clio for OHLLP (0 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  ActivityDescriptions OHLLP            0         0         0   OK
+  ... reading the Allocations ID list from Clio for OHLLP (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Allocations          OHLLP            2         2         0   OK
+  ... reading the BankTransactions ID list from Clio for OHLLP (7 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  BankTransactions     OHLLP            7         7         0   OK
+  ... reading the Bills ID list from Clio for OHLLP (11 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Bills                OHLLP           11        12         0   OK
+  ... reading the CalendarEntries ID list from Clio for OHLLP (0 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CalendarEntries      OHLLP            0         0         0   OK
+  ... reading the Calendars ID list from Clio for OHLLP (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Calendars            OHLLP            2         2         0   OK
+  ... reading the Contacts ID list from Clio for OHLLP (245 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Contacts             OHLLP          245       245         0   OK
+  ... reading the CustomFields ID list from Clio for OHLLP (10 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFields         OHLLP           10        10         0   OK
+  ... reading the CustomFieldSets ID list from Clio for OHLLP (3 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFieldSets      OHLLP            3         3         0   OK
+  ... reading the Folders ID list from Clio for OHLLP (396 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Folders              OHLLP          396       403         0   OK
+  ... reading the LineItems ID list from Clio for OHLLP (82 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  LineItems            OHLLP           82        84         0   OK
+  ... reading the MatterNotes ID list from Clio for OHLLP (0 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  MatterNotes          OHLLP            0         0         0   OK
+  ... reading the Matters ID list from Clio for OHLLP (153 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Matters              OHLLP          153       159         0   OK
+  ... reading the PracticeAreas ID list from Clio for OHLLP (7 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  PracticeAreas        OHLLP            7         7         0   OK
+  ... reading the Relationships ID list from Clio for OHLLP (11 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Relationships        OHLLP           11        11         0   OK
+  ... reading the Tasks ID list from Clio for OHLLP (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Tasks                OHLLP            2         2         0   OK
+  ... reading the TaskTypes ID list from Clio for OHLLP (7 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  TaskTypes            OHLLP            7         7         0   OK
+  ... reading the Users ID list from Clio for OHLLP (6 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Users                OHLLP            6         6         0   OK
+  ... reading the Activities ID list from Clio for Riyadh (89894 rows in table; large tables can take several minutes)
+  ... done in 09:29
+  Activities           Riyadh       89894     90188         0   OK
+  ... reading the ActivityDescriptions ID list from Clio for Riyadh (19 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  ActivityDescriptions Riyadh          19        19         0   OK
+  ... reading the Allocations ID list from Clio for Riyadh (7919 rows in table; large tables can take several minutes)
+  ... done in 00:06
+  Allocations          Riyadh        7919      7923         0   OK
+  ... reading the BankTransactions ID list from Clio for Riyadh (11739 rows in table; large tables can take several minutes)
+  ... done in 01:06
+  BankTransactions     Riyadh       11739     11752         0   OK
+  ... reading the Bills ID list from Clio for Riyadh (10432 rows in table; large tables can take several minutes)
+  ... done in 01:37
+  Bills                Riyadh       10432     10451         0   OK
+  ... reading the CalendarEntries ID list from Clio for Riyadh (9 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CalendarEntries      Riyadh           9         9         0   OK
+  ... reading the Calendars ID list from Clio for Riyadh (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Calendars            Riyadh           2         2         0   OK
+  ... reading the Contacts ID list from Clio for Riyadh (2572 rows in table; large tables can take several minutes)
+  ... done in 00:01
+  Contacts             Riyadh        2572      2579         0   OK
+  ... reading the CustomFields ID list from Clio for Riyadh (32 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFields         Riyadh          32        32         0   OK
+  ... reading the CustomFieldSets ID list from Clio for Riyadh (4 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFieldSets      Riyadh           4         4         0   OK
+  ... reading the Folders ID list from Clio for Riyadh (5469 rows in table; large tables can take several minutes)
+  ... done in 00:34
+  Folders              Riyadh        5469      5475         0   OK
+  ... reading the LineItems ID list from Clio for Riyadh (93448 rows in table; large tables can take several minutes)
+  ... done in 09:37
+  LineItems            Riyadh       93448     94079         0   OK
+  ... reading the MatterNotes ID list from Clio for Riyadh (125 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  MatterNotes          Riyadh         125       125         0   OK
+  ... reading the Matters ID list from Clio for Riyadh (1860 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Matters              Riyadh        1860      1865         0   OK
+  ... reading the PracticeAreas ID list from Clio for Riyadh (11 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  PracticeAreas        Riyadh          11        11         0   OK
+  ... reading the Relationships ID list from Clio for Riyadh (1948 rows in table; large tables can take several minutes)
+  ... done in 00:01
+  Relationships        Riyadh        1948      2403         0   OK
+  ... reading the Tasks ID list from Clio for Riyadh (2017 rows in table; large tables can take several minutes)
+  ... done in 01:43
+  Tasks                Riyadh        2017      2027         0   OK
+  ... reading the TaskTypes ID list from Clio for Riyadh (7 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  TaskTypes            Riyadh           7         7         0   OK
+  ... reading the Users ID list from Clio for Riyadh (113 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Users                Riyadh         113       113         0   OK
+  ... reading the Activities ID list from Clio for Dubai (62224 rows in table; large tables can take several minutes)
+  ... done in 05:26
+  Activities           Dubai        62224     62609         0   OK
+  ... reading the ActivityDescriptions ID list from Clio for Dubai (8 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  ActivityDescriptions Dubai            8         8         0   OK
+  ... reading the Allocations ID list from Clio for Dubai (3582 rows in table; large tables can take several minutes)
+  ... done in 00:04
+  Allocations          Dubai         3582      3598         0   OK
+  ... reading the BankTransactions ID list from Clio for Dubai (10908 rows in table; large tables can take several minutes)
+  ... done in 01:46
+  BankTransactions     Dubai        10908     10943         0   OK
+  ... reading the Bills ID list from Clio for Dubai (6943 rows in table; large tables can take several minutes)
+  ... done in 01:16
+  Bills                Dubai         6943      6968         0   OK
+  ... reading the CalendarEntries ID list from Clio for Dubai (0 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CalendarEntries      Dubai            0         0         0   OK
+  ... reading the Calendars ID list from Clio for Dubai (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Calendars            Dubai            2         2         0   OK
+  ... reading the Contacts ID list from Clio for Dubai (2385 rows in table; large tables can take several minutes)
+  ... done in 00:01
+  Contacts             Dubai         2385      2395         0   OK
+  ... reading the CustomFields ID list from Clio for Dubai (28 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFields         Dubai           28        28         0   OK
+  ... reading the CustomFieldSets ID list from Clio for Dubai (4 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFieldSets      Dubai            4         4         0   OK
+  ... reading the Folders ID list from Clio for Dubai (5297 rows in table; large tables can take several minutes)
+  ... done in 01:27
+  Folders              Dubai         5297      5374         0   OK
+  ... reading the LineItems ID list from Clio for Dubai (49384 rows in table; large tables can take several minutes)
+  ... done in 04:58
+  LineItems            Dubai        49384     49933         0   OK
+  ... reading the MatterNotes ID list from Clio for Dubai (66 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  MatterNotes          Dubai           66        66         0   OK
+  ... reading the Matters ID list from Clio for Dubai (1348 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Matters              Dubai         1348      1354         0   OK
+  ... reading the PracticeAreas ID list from Clio for Dubai (8 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  PracticeAreas        Dubai            8         8         0   OK
+  ... reading the Relationships ID list from Clio for Dubai (2012 rows in table; large tables can take several minutes)
+  ... done in 00:01
+  Relationships        Dubai         2012      2456         0   OK
+  ... reading the Tasks ID list from Clio for Dubai (402 rows in table; large tables can take several minutes)
+  ... done in 00:51
+  Tasks                Dubai          402       415         0   OK
+  ... reading the TaskTypes ID list from Clio for Dubai (14 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  TaskTypes            Dubai           14        14         0   OK
+  ... reading the Users ID list from Clio for Dubai (58 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Users                Dubai           58        58         0   OK
+  ... reading the Activities ID list from Clio for Beirut (27629 rows in table; large tables can take several minutes)
+  ... done in 01:56
+  Activities           Beirut       27629     27634         0   OK
+  ... reading the ActivityDescriptions ID list from Clio for Beirut (66 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  ActivityDescriptions Beirut          66        66         0   OK
+  ... reading the Allocations ID list from Clio for Beirut (2058 rows in table; large tables can take several minutes)
+  ... done in 01:15
+  Allocations          Beirut        2058      2061         0   OK
+  ... reading the BankTransactions ID list from Clio for Beirut (4714 rows in table; large tables can take several minutes)
+  ... done in 00:05
+  BankTransactions     Beirut        4714      4726         2   2 possibly deleted in Clio - checking one by one
+    confirmed deleted in Clio (HTTP 404): 2 of 2  IDs: 27765064,27765067
+    moved 2 record(s) to BankTransactions_Deleted.
+  ... reading the Bills ID list from Clio for Beirut (1959 rows in table; large tables can take several minutes)
+  ... done in 00:04
+  Bills                Beirut        1959      1962         0   OK
+  ... reading the CalendarEntries ID list from Clio for Beirut (0 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CalendarEntries      Beirut           0         0         0   OK
+  ... reading the Calendars ID list from Clio for Beirut (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Calendars            Beirut           2         2         0   OK
+  ... reading the Contacts ID list from Clio for Beirut (604 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Contacts             Beirut         604       604         0   OK
+  ... reading the CustomFields ID list from Clio for Beirut (41 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFields         Beirut          41        41         0   OK
+  ... reading the CustomFieldSets ID list from Clio for Beirut (3 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  CustomFieldSets      Beirut           3         3         0   OK
+  ... reading the Folders ID list from Clio for Beirut (1349 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Folders              Beirut        1349      1349         0   OK
+  ... reading the LineItems ID list from Clio for Beirut (11930 rows in table; large tables can take several minutes)
+  ... done in 00:59
+  LineItems            Beirut       11930     11960         0   OK
+  ... reading the MatterNotes ID list from Clio for Beirut (2 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  MatterNotes          Beirut           2         2         0   OK
+  ... reading the Matters ID list from Clio for Beirut (655 rows in table; large tables can take several minutes)
+  ... done in 01:44
+  Matters              Beirut         655       655         0   OK
+  ... reading the PracticeAreas ID list from Clio for Beirut (10 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  PracticeAreas        Beirut          10        10         0   OK
+  ... reading the Relationships ID list from Clio for Beirut (258 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Relationships        Beirut         258       258         0   OK
+  ... reading the Tasks ID list from Clio for Beirut (46 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Tasks                Beirut          46        46         0   OK
+  ... reading the TaskTypes ID list from Clio for Beirut (7 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  TaskTypes            Beirut           7         7         0   OK
+  ... reading the Users ID list from Clio for Beirut (31 rows in table; large tables can take several minutes)
+  ... done in 00:00
+  Users                Beirut          31        31         0   OK
+Delete reconciliation finished: 2 record(s) moved to *_Deleted, 0 problem(s).
+Step 2/5: recording the approved staging snapshot.
+Snapshot RunID: 1e3daaa1-239a-41cf-95a0-590b804f9f2b
+Step 3/5: 10% comparison and endpoint status check.
+Validating staging RunID: 1e3daaa1-239a-41cf-95a0-590b804f9f2b
+Endpoint audit: 76 COMPLETE of 76 expected.
+PracticeAreas          08d0109f-2c51-48f4-b469-2c0836369098 | stage        7 | production        6 | production shortfall    0.00% | PASS
+PracticeAreas          72bdc899-a31f-484a-ba9d-5195ff638c62 | stage       11 | production       11 | production shortfall    0.00% | PASS
+PracticeAreas          c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage        8 | production        8 | production shortfall    0.00% | PASS
+PracticeAreas          525a5094-604b-4427-8fd9-f87c8d7fe619 | stage       10 | production       10 | production shortfall    0.00% | PASS
+Activities             08d0109f-2c51-48f4-b469-2c0836369098 | stage      628 | production      559 | production shortfall    0.00% | PASS
+Activities             72bdc899-a31f-484a-ba9d-5195ff638c62 | stage    89894 | production    89546 | production shortfall    0.00% | PASS
+Activities             c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage    62224 | production    61880 | production shortfall    0.00% | PASS
+Activities             525a5094-604b-4427-8fd9-f87c8d7fe619 | stage    27629 | production    27596 | production shortfall    0.00% | PASS
+Calendars              08d0109f-2c51-48f4-b469-2c0836369098 | stage        2 | production        2 | production shortfall    0.00% | PASS
+Calendars              72bdc899-a31f-484a-ba9d-5195ff638c62 | stage        2 | production        2 | production shortfall    0.00% | PASS
+Calendars              c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage        2 | production        2 | production shortfall    0.00% | PASS
+Calendars              525a5094-604b-4427-8fd9-f87c8d7fe619 | stage        2 | production        2 | production shortfall    0.00% | PASS
+CalendarEntries        08d0109f-2c51-48f4-b469-2c0836369098 | stage        0 | production        0 | production shortfall    0.00% | PASS
+CalendarEntries        72bdc899-a31f-484a-ba9d-5195ff638c62 | stage        9 | production        9 | production shortfall    0.00% | PASS
+CalendarEntries        c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage        0 | production        0 | production shortfall    0.00% | PASS
+CalendarEntries        525a5094-604b-4427-8fd9-f87c8d7fe619 | stage        0 | production        0 | production shortfall    0.00% | PASS
+Relationships          08d0109f-2c51-48f4-b469-2c0836369098 | stage       11 | production        0 | production shortfall    0.00% | PASS
+Relationships          72bdc899-a31f-484a-ba9d-5195ff638c62 | stage     2389 | production     2370 | production shortfall    0.00% | PASS
+Relationships          c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage     2444 | production     2409 | production shortfall    0.00% | PASS
+Relationships          525a5094-604b-4427-8fd9-f87c8d7fe619 | stage      258 | production      258 | production shortfall    0.00% | PASS
+Tasks                  08d0109f-2c51-48f4-b469-2c0836369098 | stage        2 | production        0 | production shortfall    0.00% | PASS
+Tasks                  72bdc899-a31f-484a-ba9d-5195ff638c62 | stage     2017 | production     2002 | production shortfall    0.00% | PASS
+Tasks                  c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage      402 | production      368 | production shortfall    0.00% | PASS
+Tasks                  525a5094-604b-4427-8fd9-f87c8d7fe619 | stage       46 | production       46 | production shortfall    0.00% | PASS
+TaskTypes              08d0109f-2c51-48f4-b469-2c0836369098 | stage        7 | production        7 | production shortfall    0.00% | PASS
+TaskTypes              72bdc899-a31f-484a-ba9d-5195ff638c62 | stage        7 | production        7 | production shortfall    0.00% | PASS
+TaskTypes              c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage       14 | production       14 | production shortfall    0.00% | PASS
+TaskTypes              525a5094-604b-4427-8fd9-f87c8d7fe619 | stage        7 | production        7 | production shortfall    0.00% | PASS
+Matters                08d0109f-2c51-48f4-b469-2c0836369098 | stage      153 | production      151 | production shortfall    0.00% | PASS
+Matters                72bdc899-a31f-484a-ba9d-5195ff638c62 | stage     1860 | production     1850 | production shortfall    0.00% | PASS
+Matters                c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage     1348 | production     1331 | production shortfall    0.00% | PASS
+Matters                525a5094-604b-4427-8fd9-f87c8d7fe619 | stage      655 | production      655 | production shortfall    0.00% | PASS
+Bills                  08d0109f-2c51-48f4-b469-2c0836369098 | stage       11 | production        2 | production shortfall    0.00% | PASS
+Bills                  72bdc899-a31f-484a-ba9d-5195ff638c62 | stage    10432 | production    10386 | production shortfall    0.00% | PASS
+Bills                  c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage     6943 | production     6895 | production shortfall    0.00% | PASS
+Bills                  525a5094-604b-4427-8fd9-f87c8d7fe619 | stage     1959 | production     1957 | production shortfall    0.00% | PASS
+BankTransactions       08d0109f-2c51-48f4-b469-2c0836369098 | stage        7 | production        0 | production shortfall    0.00% | PASS
+BankTransactions       72bdc899-a31f-484a-ba9d-5195ff638c62 | stage    11739 | production    11695 | production shortfall    0.00% | PASS
+BankTransactions       c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage    10908 | production    10831 | production shortfall    0.00% | PASS
+BankTransactions       525a5094-604b-4427-8fd9-f87c8d7fe619 | stage     4712 | production     4707 | production shortfall    0.00% | PASS
+CustomFields           08d0109f-2c51-48f4-b469-2c0836369098 | stage       10 | production       10 | production shortfall    0.00% | PASS
+CustomFields           72bdc899-a31f-484a-ba9d-5195ff638c62 | stage       32 | production       31 | production shortfall    0.00% | PASS
+CustomFields           c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage       28 | production       28 | production shortfall    0.00% | PASS
+CustomFields           525a5094-604b-4427-8fd9-f87c8d7fe619 | stage       41 | production       41 | production shortfall    0.00% | PASS
+CustomFieldSets        08d0109f-2c51-48f4-b469-2c0836369098 | stage        3 | production        3 | production shortfall    0.00% | PASS
+CustomFieldSets        72bdc899-a31f-484a-ba9d-5195ff638c62 | stage        4 | production        4 | production shortfall    0.00% | PASS
+CustomFieldSets        c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage        4 | production        4 | production shortfall    0.00% | PASS
+CustomFieldSets        525a5094-604b-4427-8fd9-f87c8d7fe619 | stage        3 | production        3 | production shortfall    0.00% | PASS
+Folders                08d0109f-2c51-48f4-b469-2c0836369098 | stage      396 | production      391 | production shortfall    0.00% | PASS
+Folders                72bdc899-a31f-484a-ba9d-5195ff638c62 | stage     5469 | production     5457 | production shortfall    0.00% | PASS
+Folders                c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage     5297 | production     5131 | production shortfall    0.00% | PASS
+Folders                525a5094-604b-4427-8fd9-f87c8d7fe619 | stage     1349 | production     1349 | production shortfall    0.00% | PASS
+LineItems              08d0109f-2c51-48f4-b469-2c0836369098 | stage       82 | production        5 | production shortfall    0.00% | PASS
+LineItems              72bdc899-a31f-484a-ba9d-5195ff638c62 | stage    93448 | production    92495 | production shortfall    0.00% | PASS
+LineItems              c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage    49384 | production    48625 | production shortfall    0.00% | PASS
+LineItems              525a5094-604b-4427-8fd9-f87c8d7fe619 | stage    11930 | production    11873 | production shortfall    0.00% | PASS
+Contacts               08d0109f-2c51-48f4-b469-2c0836369098 | stage      245 | production      233 | production shortfall    0.00% | PASS
+Contacts               72bdc899-a31f-484a-ba9d-5195ff638c62 | stage     2572 | production     2562 | production shortfall    0.00% | PASS
+Contacts               c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage     2385 | production     2370 | production shortfall    0.00% | PASS
+Contacts               525a5094-604b-4427-8fd9-f87c8d7fe619 | stage      604 | production      604 | production shortfall    0.00% | PASS
+Allocations            08d0109f-2c51-48f4-b469-2c0836369098 | stage        2 | production        0 | production shortfall    0.00% | PASS
+Allocations            72bdc899-a31f-484a-ba9d-5195ff638c62 | stage     7919 | production     7907 | production shortfall    0.00% | PASS
+Allocations            c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage     3582 | production     3561 | production shortfall    0.00% | PASS
+Allocations            525a5094-604b-4427-8fd9-f87c8d7fe619 | stage     2058 | production     2057 | production shortfall    0.00% | PASS
+Users                  08d0109f-2c51-48f4-b469-2c0836369098 | stage        6 | production        5 | production shortfall    0.00% | PASS
+Users                  72bdc899-a31f-484a-ba9d-5195ff638c62 | stage      113 | production      135 | production shortfall   16.30% | REVIEW
+Users                  c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage       58 | production       76 | production shortfall   23.68% | REVIEW
+Users                  525a5094-604b-4427-8fd9-f87c8d7fe619 | stage       31 | production       41 | production shortfall   24.39% | REVIEW
+ActivityDescriptions   08d0109f-2c51-48f4-b469-2c0836369098 | stage        0 | production        0 | production shortfall    0.00% | PASS
+ActivityDescriptions   72bdc899-a31f-484a-ba9d-5195ff638c62 | stage       19 | production       19 | production shortfall    0.00% | PASS
+ActivityDescriptions   c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage        8 | production        8 | production shortfall    0.00% | PASS
+ActivityDescriptions   525a5094-604b-4427-8fd9-f87c8d7fe619 | stage       66 | production       66 | production shortfall    0.00% | PASS
+MatterNotes            08d0109f-2c51-48f4-b469-2c0836369098 | stage        0 | production        0 | production shortfall    0.00% | PASS
+MatterNotes            72bdc899-a31f-484a-ba9d-5195ff638c62 | stage      125 | production      125 | production shortfall    0.00% | PASS
+MatterNotes            c9bfe80b-4e0a-4b77-9a4e-b263907fb378 | stage       66 | production       66 | production shortfall    0.00% | PASS
+MatterNotes            525a5094-604b-4427-8fd9-f87c8d7fe619 | stage        2 | production        2 | production shortfall    0.00% | PASS
+
+VALIDATION FAILED: 3 issue(s).
+ - Users / 72bdc899-a31f-484a-ba9d-5195ff638c62: production shortfall 16.30% exceeds 10.00%.
+ - Users / c9bfe80b-4e0a-4b77-9a4e-b263907fb378: production shortfall 23.68% exceeds 10.00%.
+ - Users / 525a5094-604b-4427-8fd9-f87c8d7fe619: production shortfall 24.39% exceeds 10.00%.
+FULL CHECK FAILED: this snapshot must not be published.
