@@ -51,22 +51,103 @@ namespace CSP.Clio.Sync
             new Target { Endpoint = "Users",                Table = "Users",                ApiMethod = "GetUsers",               Service = "users" },
         };
 
-        /// <summary>The --reconcile-deletes command: takes the pipeline lock, reconciles, and rebuilds the reporting tables when rows moved.</summary>
-        public static async Task<int> RunCommandAsync(StagingAudit audit, bool apply)
+        /// <summary>
+        /// The --reconcile-deletes / --delete-sync command. Only one delete pass runs at a time (ClioDeleteRun). It does NOT block the incremental
+        /// sync: the only moments it needs the database exclusively are the short steps that move rows to the *_Deleted tables, and each of those
+        /// takes the shared ClioLiveWrite lock for itself (see ArchiveWithLock). Every applied pass is recorded in control.DeleteRun.
+        /// </summary>
+        public static async Task<int> RunCommandAsync(StagingAudit audit, bool apply, IEnumerable<string> only = null)
         {
-            using (var pipelineLock = PipelineLock.TryAcquire(audit.ConnectionString))
+            using (var passLock = PipelineLock.TryAcquire(audit.ConnectionString, PipelineLock.DeleteRun, false))
             {
-                if (pipelineLock == null)
+                if (passLock == null)
                 {
-                    Console.Error.WriteLine("DELETE RECONCILIATION BLOCKED: an incremental sync or another pipeline run is active. Wait for it to finish and run again.");
-                    return 1;
+                    Console.WriteLine("DELETE PASS SKIPPED: another delete pass is still running. The next scheduled pass will start when it has finished.");
+                    return 0;
                 }
-                audit.PreflightOrThrow(false, pipelineLockHeld: true);
+                audit.PreflightForDelete();
 
-                var result = await new DeleteReconciler(audit.ConnectionString, apply).RunAsync().ConfigureAwait(false);
+                var runId = Guid.NewGuid();
+                if (apply)
+                {
+                    EnsureDeleteRunTable(audit.ConnectionString);
+                    StartDeleteRun(audit.ConnectionString, runId);
+                }
+
+                Tuple<long, int> result;
+                DeleteReconciler reconciler;
+                try
+                {
+                    reconciler = new DeleteReconciler(audit.ConnectionString, apply, true, only);
+                    result = await reconciler.RunAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    if (apply) FinishDeleteRun(audit.ConnectionString, runId, "FAILED", 0, 0, ex.GetType().Name + ": " + ex.Message);
+                    throw;
+                }
+
+                if (apply)
+                    // A pass limited to some endpoints (--only / DeleteReconcileEndpoints) is recorded as PARTIAL and never counts as a clean pass.
+                    FinishDeleteRun(audit.ConnectionString, runId, result.Item2 != 0 ? "PROBLEMS" : reconciler.IsPartial ? "PARTIAL" : "COMPLETE", result.Item1, result.Item2,
+                        result.Item2 == 0 ? null : result.Item2 + " endpoint(s) reported a problem; see the run log.");
                 if (result.Item1 > 0)
-                    Console.WriteLine("Records were removed from the raw tables. Run --full-check (it rebuilds the reporting tables) and then --full-check --confirm-publish to send the deletions to the target database.");
+                    Console.WriteLine("Records were moved to the *_Deleted tables. The next publish cycle copies them to the reporting database.");
                 return result.Item2 == 0 ? 0 : 1;
+            }
+        }
+
+        static void EnsureDeleteRunTable(string connectionString)
+        {
+            using (var c = new SqlConnection(connectionString))
+            using (var cmd = new SqlCommand(@"
+IF SCHEMA_ID(N'control') IS NULL EXEC(N'CREATE SCHEMA control AUTHORIZATION dbo;');
+IF OBJECT_ID(N'control.DeleteRun', N'U') IS NULL
+    CREATE TABLE control.DeleteRun
+    (
+        DeleteRunID uniqueidentifier NOT NULL CONSTRAINT PK_DeleteRun PRIMARY KEY,
+        StartedAtUTC datetime2(7) NOT NULL CONSTRAINT DF_DeleteRun_StartedAtUTC DEFAULT SYSUTCDATETIME(),
+        CompletedAtUTC datetime2(7) NULL,
+        Status varchar(20) NOT NULL,
+        RowsMoved bigint NULL,
+        Problems int NULL,
+        ErrorMessage nvarchar(3500) NULL,
+        CONSTRAINT CK_DeleteRun_Status CHECK (Status IN ('RUNNING','COMPLETE','PARTIAL','PROBLEMS','FAILED','ABANDONED'))
+    );", c))
+            {
+                c.Open();
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        static void StartDeleteRun(string connectionString, Guid runId)
+        {
+            using (var c = new SqlConnection(connectionString))
+            {
+                c.Open();
+                // The ClioDeleteRun lock is held, so any RUNNING row belongs to a pass whose process died.
+                using (var abandon = new SqlCommand("UPDATE control.DeleteRun SET Status = 'ABANDONED', CompletedAtUTC = SYSUTCDATETIME(), ErrorMessage = N'Abandoned: the process ended before the pass finished.' WHERE Status = 'RUNNING'", c))
+                    abandon.ExecuteNonQuery();
+                using (var cmd = new SqlCommand("INSERT control.DeleteRun (DeleteRunID, Status) VALUES (@r, 'RUNNING')", c))
+                {
+                    cmd.Parameters.AddWithValue("@r", runId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        static void FinishDeleteRun(string connectionString, Guid runId, string status, long moved, int problems, string error)
+        {
+            using (var c = new SqlConnection(connectionString))
+            using (var cmd = new SqlCommand("UPDATE control.DeleteRun SET Status = @s, CompletedAtUTC = SYSUTCDATETIME(), RowsMoved = @m, Problems = @p, ErrorMessage = @e WHERE DeleteRunID = @r", c))
+            {
+                cmd.Parameters.AddWithValue("@s", status);
+                cmd.Parameters.AddWithValue("@m", moved);
+                cmd.Parameters.AddWithValue("@p", problems);
+                cmd.Parameters.AddWithValue("@e", (object)StagingAudit.Truncate(error, 3500) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@r", runId);
+                c.Open();
+                cmd.ExecuteNonQuery();
             }
         }
 
@@ -77,11 +158,32 @@ namespace CSP.Clio.Sync
         readonly int _smallTableAllowance;
         readonly HashSet<string> _listingAuthoritative;
         readonly Guid _reconcileRunId = Guid.NewGuid();
+        readonly bool _useChunkLocks;
+        readonly TimeSpan _lockWait;
+        readonly HashSet<string> _only;
 
-        public DeleteReconciler(string connectionString, bool apply)
+        /// <summary>True when only some endpoints are reconciled.</summary>
+        public bool IsPartial { get { return _only.Count > 0 && _only.Count < Targets.Length; } }
+
+        /// <param name="useChunkLocks">True for the background delete task (each archive step takes the shared ClioLiveWrite lock itself).
+        /// False only when the caller already holds the exclusive lock for the whole run.</param>
+        /// <param name="only">Endpoint names to reconcile (default: all, or AppSetting DeleteReconcileEndpoints).</param>
+        public DeleteReconciler(string connectionString, bool apply, bool useChunkLocks = true, IEnumerable<string> only = null)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
             _apply = apply;
+            _useChunkLocks = useChunkLocks;
+            int waitMinutes;
+            _lockWait = TimeSpan.FromMinutes(int.TryParse(ConfigurationManager.AppSettings["DeleteLockWaitMinutes"], out waitMinutes) && waitMinutes >= 0 ? waitMinutes : 30);
+            var wanted = only != null
+                ? only.ToList()
+                : (ConfigurationManager.AppSettings["DeleteReconcileEndpoints"] ?? string.Empty)
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
+            _only = new HashSet<string>(wanted, StringComparer.OrdinalIgnoreCase);
+            var unknown = _only.Where(n => !Targets.Any(t => string.Equals(t.Endpoint, n, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (unknown.Count > 0)
+                throw new ConfigurationErrorsException("Unknown endpoint(s) for the delete reconciliation: " + string.Join(", ", unknown) +
+                    ". Allowed: " + string.Join(", ", Targets.Select(t => t.Endpoint)) + ".");
             decimal pct;
             _maxPercent = decimal.TryParse(ConfigurationManager.AppSettings["DeleteReconcileMaxPercent"], NumberStyles.Number, CultureInfo.InvariantCulture, out pct) && pct > 0 ? pct : 5m;
             int max;
@@ -99,7 +201,7 @@ namespace CSP.Clio.Sync
             Console.WriteLine("Delete reconciliation " + (_apply ? "(APPLY)" : "(REPORT ONLY - nothing will be changed; add --apply to move confirmed deletions)") +
                 ". Safety limit: " + _maxPercent.ToString("0.##", CultureInfo.InvariantCulture) + "% of a company's rows per endpoint.");
             Console.WriteLine("  Endpoint             Company     In table   In Clio   Missing   Result");
-            Console.WriteLine("  (In table = rows in Clio_Staging; In Clio = rows Clio returns now; Missing = rows we hold that Clio no longer has. Missing 0 is correct.)");
+            Console.WriteLine("  (In table = rows in " + PipelineRole.RequiredDatabase + "; In Clio = rows Clio returns now; Missing = rows we hold that Clio no longer has. Missing 0 is correct.)");
             long moved = 0;
             var problems = 0;
             var dataManager = new BIDataManager(false);
@@ -116,7 +218,7 @@ namespace CSP.Clio.Sync
                     continue;
                 }
 
-                foreach (var target in Targets)
+                foreach (var target in Targets.Where(t => _only.Count == 0 || _only.Contains(t.Endpoint)))
                 {
                     try { moved += await ReconcileAsync(pageClient, company.ID, company.CompanyName, bearer, target).ConfigureAwait(false); }
                     catch (Exception ex)
@@ -192,7 +294,20 @@ namespace CSP.Clio.Sync
                 (confirmed.Count > 0 ? "  IDs: " + string.Join(",", confirmed.Take(10)) + (confirmed.Count > 10 ? ",..." : string.Empty) : string.Empty));
 
             if (confirmed.Count == 0 || !_apply) return 0;
-            return ArchiveAndRemove(target, companyId, confirmed);
+            return ArchiveWithLock(target, companyId, confirmed);
+        }
+
+        /// <summary>Moves the rows while holding the shared ClioLiveWrite lock: it runs beside the incremental sync, but never while the publish cycle copies this database.</summary>
+        long ArchiveWithLock(Target target, Guid companyId, List<long> ids)
+        {
+            if (!_useChunkLocks) return ArchiveAndRemove(target, companyId, ids);
+            using (var writeLock = PipelineLock.TryAcquireWithWait(_connectionString, _lockWait, PipelineLock.LiveWrite, true))
+            {
+                if (writeLock == null)
+                    throw new InvalidOperationException("the database is locked by a publish cycle (waited " + (int)_lockWait.TotalMinutes +
+                        " minute(s)); these " + ids.Count + " deletion(s) will be retried by the next pass");
+                return ArchiveAndRemove(target, companyId, ids);
+            }
         }
 
         HashSet<long> ReadTableIds(Target target, Guid companyId)

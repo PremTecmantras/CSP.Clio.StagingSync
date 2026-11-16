@@ -65,7 +65,8 @@ namespace CSP.Clio.Sync
             var cs = ConfigurationManager.ConnectionStrings[ConnectionName]
                 ?? throw new InvalidOperationException("Connection string '" + ConnectionName + "' is missing from the config file.");
             var sql = new SqlConnectionStringBuilder(new EntityConnectionStringBuilder(cs.ConnectionString).ProviderConnectionString);
-            var requiredDatabase = RequiredDatabase;
+            // In two-database mode a Live process has already switched the connection string to Clio_Live (PipelineRole.UseLiveDatabase).
+            var requiredDatabase = PipelineRole.RequiredDatabase;
 
             if (!string.Equals(sql.InitialCatalog, requiredDatabase, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
@@ -111,6 +112,22 @@ namespace CSP.Clio.Sync
             }
         }
 
+        /// <summary>
+        /// Light check for the delete task: the right database and the bootstrap row. It deliberately does NOT close RUNNING incremental or
+        /// full-run rows, because the delete task runs beside a live incremental sync.
+        /// </summary>
+        public void PreflightForDelete()
+        {
+            using (var c = Open())
+            {
+                var db = (string)Scalar(c, "SELECT DB_NAME()");
+                if (!string.Equals(db, PipelineRole.RequiredDatabase, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("SAFETY STOP: connected database is '" + db + "'.");
+                if (Scalar(c, "SELECT PublishEnabled FROM control.BootstrapInfo WHERE ID=1") == null)
+                    throw new InvalidOperationException("control.BootstrapInfo is empty - was 01_Create_Clio_Staging.sql run?");
+            }
+        }
+
         /// <summary>Checks the bootstrap info and that no run is already RUNNING.</summary>
         /// <param name="pipelineLockHeld">True when the caller already holds the pipeline lock: a RUNNING incremental row then
         /// belongs to a process that died (for example a killed or rebooted task), so it is closed as ABANDONED, not treated as a conflict.</param>
@@ -119,7 +136,7 @@ namespace CSP.Clio.Sync
             using (var c = Open())
             {
                 var db = (string)Scalar(c, "SELECT DB_NAME()");
-                if (!string.Equals(db, RequiredDatabase, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(db, PipelineRole.RequiredDatabase, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("SAFETY STOP: connected database is '" + db + "'.");
 
                 var pub = Scalar(c, "SELECT PublishEnabled FROM control.BootstrapInfo WHERE ID=1");
