@@ -47,7 +47,7 @@ namespace CSP.Clio.Sync
 
             try
             {
-                using (RunConsoleLogger.Start(HasArgument(args, "--incremental"), HasArgument(args, "--full-check"), HasArgument(args, "--reconcile-deletes"), HasArgument(args, "--delete-sync")))
+                using (RunConsoleLogger.Start(HasArgument(args, "--incremental"), HasArgument(args, "--full-check"), HasArgument(args, "--reconcile-deletes")))
                 {
                     return await MainCore(args);
                 }
@@ -122,22 +122,12 @@ namespace CSP.Clio.Sync
             StagingAudit audit;
             try
             {
-                // Two-database mode: the incremental sync, the delete task and the first load work on Clio_Live; the publish cycle works on Clio_Staging.
-                if (PipelineRole.DualDatabaseMode && PipelineRole.CommandUsesLive(args))
-                {
-                    PipelineRole.UseLiveDatabase();
-                    PipelineRole.VerifyEfTarget();
-                }
                 audit = StagingAudit.CreateGuarded();
                 Console.WriteLine("Target: " + audit.Describe());
                 if (HasArgument(args, "--full-check"))
                     return await FullCheckRunner.RunAsync(audit, HasArgument(args, "--confirm-publish"), !HasArgument(args, "--skip-deletes"));
-                if (HasArgument(args, "--reconcile-deletes") || HasArgument(args, "--delete-sync"))
-                {
-                    // --delete-sync is the scheduled background task: it always applies. --reconcile-deletes only reports unless --apply is added.
-                    var apply = HasArgument(args, "--delete-sync") || HasArgument(args, "--apply");
-                    return await DeleteReconciler.RunCommandAsync(audit, apply, TryGetList(args, "--only"));
-                }
+                if (HasArgument(args, "--reconcile-deletes"))
+                    return await DeleteReconciler.RunCommandAsync(audit, HasArgument(args, "--apply"));
                 if (incrementalRequested)
                 {
                     if (!ReadBooleanSetting("EnableIncrementalSync"))
@@ -145,27 +135,17 @@ namespace CSP.Clio.Sync
                         Console.Error.WriteLine("INCREMENTAL SYNC BLOCKED: set EnableIncrementalSync=true only after the incremental control script and first test are complete.");
                         return 2;
                     }
-                    // Scheduled task: only one incremental run at a time, and never while a publish cycle copies or owns this database.
-                    // Both cases skip quietly (exit 0): the next scheduled run reads everything changed since the saved position.
-                    using (var incrementalLock = PipelineLock.TryAcquire(audit.ConnectionString, PipelineLock.IncrementalRun, false))
+                    // Scheduled task: if a full run, a publish or the previous hourly run holds the lock, skip quietly (exit 0).
+                    using (var incrementalLock = PipelineLock.TryAcquire(audit.ConnectionString))
                     {
                         if (incrementalLock == null)
                         {
-                            Console.WriteLine("INCREMENTAL SYNC SKIPPED: the previous incremental run is still going. The next scheduled run will pick up the changes.");
+                            Console.WriteLine("INCREMENTAL SYNC SKIPPED: another pipeline run is active. The next scheduled run will pick up the changes.");
                             return 0;
                         }
-                        // Shared: the background delete task may run at the same time; the publish cycle (exclusive) may not.
-                        using (var writeLock = PipelineLock.TryAcquire(audit.ConnectionString, PipelineLock.LiveWrite, true))
-                        {
-                            if (writeLock == null)
-                            {
-                                Console.WriteLine("INCREMENTAL SYNC SKIPPED: a publish cycle is copying or using this database. The next scheduled run will pick up the changes.");
-                                return 0;
-                            }
-                            // Both locks are held, so a RUNNING row of an earlier run belongs to a process that died; a full extraction must never overlap.
-                            audit.PreflightOrThrow(false, pipelineLockHeld: true);
-                            return await new IncrementalSyncRunner(audit.ConnectionString).RunAsync();
-                        }
+                        // An incremental task must never abandon or overlap a full extraction.
+                        audit.PreflightOrThrow(false, pipelineLockHeld: true);
+                        return await new IncrementalSyncRunner(audit.ConnectionString).RunAsync();
                     }
                 }
                 audit.PreflightOrThrow(abandonStale);
@@ -176,14 +156,9 @@ namespace CSP.Clio.Sync
                 return 2;
             }
 
-            // The first load clears and refills the raw tables: it needs the database for itself, so the incremental sync, the delete task and the
-            // publish cycle (all of them skip or wait) cannot run while it works.
-            IDisposable fullRunLock;
-            try
-            {
-                fullRunLock = PipelineLock.TryAcquireExclusiveSet(audit.ConnectionString,
-                    PipelineLock.LiveWrite, PipelineLock.IncrementalRun, PipelineLock.DeleteRun, PipelineLock.Pipeline);
-            }
+            // A manual full run holds the same lock, so the scheduled incremental task skips while it runs.
+            PipelineLock fullRunLock;
+            try { fullRunLock = PipelineLock.TryAcquire(audit.ConnectionString); }
             catch (Exception ex)
             {
                 Console.Error.WriteLine("Could not take the pipeline lock: " + ex.Message);
@@ -191,7 +166,7 @@ namespace CSP.Clio.Sync
             }
             if (fullRunLock == null)
             {
-                Console.Error.WriteLine("FULL RUN BLOCKED: an incremental sync, a delete pass, a publish cycle or another full run is active. Wait for it to finish and run again.");
+                Console.Error.WriteLine("FULL RUN BLOCKED: an incremental sync or another full run is active. Wait for it to finish and run again.");
                 return 1;
             }
             using (fullRunLock)
@@ -234,20 +209,6 @@ namespace CSP.Clio.Sync
             try { ok = audit.FinishRun(abort ?? (processed ? null : "No active companies were processed")); }
             catch (Exception ex) { Console.Error.WriteLine("Could not close the run: " + ex.Message); return 1; }
             if (!ok) return 1;
-
-            if (PipelineRole.IsLive)
-            {
-                // Two-database mode: Clio_Live only holds the raw tables. The reporting build, the check and the publish are done by --full-check on Clio_Staging.
-                try { audit.SeedIncrementalWatermarks(); }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine("FIRST LOAD STOPPED: the incremental watermarks could not be set: " + ex.Message);
-                    return 1;
-                }
-                Console.WriteLine("FIRST LOAD COMPLETE: " + PipelineRole.LiveDatabaseName + " is loaded and the incremental watermarks are set.");
-                Console.WriteLine("Next: start the 5-minute incremental task and the delete task, then run --full-check (it copies Live to Clio_Staging, builds the reports and checks).");
-                return 0;
-            }
 
             try
             {
@@ -312,15 +273,6 @@ namespace CSP.Clio.Sync
             return value;
         }
 
-        /// <summary>Reads "--name a,b,c" from the arguments (null when the argument is absent).</summary>
-        static List<string> TryGetList(string[] args, string name)
-        {
-            for (var i = 0; i < args.Length - 1; i++)
-                if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
-                    return args[i + 1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
-            return null;
-        }
-
         static Guid? TryGetRunId(string[] args)
         {
             for (var i = 0; i < args.Length - 1; i++)
@@ -347,12 +299,12 @@ namespace CSP.Clio.Sync
             Console.WriteLine("  CSP.Clio.StagingSync.exe --validate [--run-id <GUID>]  Run read-only staging/production validation.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --preflight    Check raw schemas and pipeline readiness without changing data.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --status       Show recent staging and publication audit state.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --incremental  Poll changed records into the Live database (Clio_Live; Clio_Staging when LiveDatabaseName is empty). Never publishes.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --delete-sync  Background delete task (Live database): move records deleted in Clio to the *_Deleted tables. Runs beside --incremental.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes [--apply] [--only Users,Tasks]  Report (or with --apply, move) deleted records. --only limits the endpoints.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check   Publish cycle: copy Live to Clio_Staging, snapshot, 10% check, reporting build, publisher DRY RUN.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --incremental  Poll configured changed records into staging only; does not publish or truncate.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check   Manual run: catch up, record snapshot, 10% check, publisher DRY RUN. Never extracts or clears.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check --confirm-publish  Same, then publish the snapshot to the target database.");
-            Console.WriteLine("  With LiveDatabaseName empty (single-database mode) --full-check applies the delete reconciliation itself; add --skip-deletes to leave it out.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes          Report records deleted in Clio (full ID listing + HTTP 404 confirmation). Changes nothing.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes --apply  Move confirmed deletions to the *_Deleted tables (run --full-check afterwards).");
+            Console.WriteLine("  --full-check always applies the delete reconciliation first (adds roughly 20-40 minutes). Add --skip-deletes to leave it out for one run.");
         }
 
         /// <returns>false if there was nothing to process.</returns>
@@ -774,7 +726,6 @@ namespace CSP.Clio.Sync
         async Task<RestResponse> GetWithRateLimitRetryAsync(RestClient client, string url, string bearerToken,
             ClioPageStreamMetrics metrics, string apiService)
         {
-            var transientRetries = 0;
             for (var attempt = 0; ; attempt++)
             {
                 var request = new RestRequest(url, Method.Get);
@@ -787,17 +738,7 @@ namespace CSP.Clio.Sync
 
                 if (response == null)
                     throw new InvalidOperationException("Clio API returned no response for " + apiService + ".");
-                var statusCode = (int)response.StatusCode;
-                // A network blip (no HTTP response at all, status 0) or a gateway error is retried a few times with a growing pause,
-                // so a short outage does not fail a whole endpoint. The caller still sees the failure if it does not recover.
-                if ((statusCode == 0 || statusCode == 502 || statusCode == 503 || statusCode == 504) && transientRetries < 6)
-                {
-                    transientRetries++;
-                    attempt--;   // transient retries do not use up the rate-limit retries
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(60, 10 * transientRetries))).ConfigureAwait(false);
-                    continue;
-                }
-                if (statusCode != 429)
+                if ((int)response.StatusCode != 429)
                     return response;
                 if (attempt >= MaximumRateLimitRetries)
                     throw new InvalidOperationException("Clio API rate-limit retry limit reached for " + apiService + ".");

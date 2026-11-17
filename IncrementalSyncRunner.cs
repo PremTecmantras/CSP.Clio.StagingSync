@@ -111,7 +111,7 @@ namespace CSP.Clio.Sync
 
                 FinishRun(runId, allSucceeded, failure);
                 Console.WriteLine(allSucceeded
-                    ? "INCREMENTAL SYNC COMPLETE: the raw tables in " + PipelineRole.RequiredDatabase + " are up to date. The reporting tables are built by the publish cycle (--full-check). No production publication was attempted."
+                    ? "INCREMENTAL SYNC COMPLETE: staging raw tables are up to date. The reporting tables are rebuilt by --full-check. No production publication was attempted."
                     : "INCREMENTAL SYNC FAILED: review control.IncrementalSyncResult and the run log. No production publication was attempted.");
                 return allSucceeded ? 0 : 1;
             }
@@ -219,20 +219,7 @@ namespace CSP.Clio.Sync
             }
         }
 
-        /// <summary>Returns the bearer token of the company, refreshing it when it expired. A network blip is retried (3 tries, 15 s apart).</summary>
         internal static async Task<string> GetBearerTokenAsync(BIDataManager dataManager, C_EKPCompanies company)
-        {
-            for (var attempt = 1; ; attempt++)
-            {
-                try { return await GetBearerTokenOnceAsync(dataManager, company).ConfigureAwait(false); }
-                catch (Exception) when (attempt < 3)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
-                }
-            }
-        }
-
-        static async Task<string> GetBearerTokenOnceAsync(BIDataManager dataManager, C_EKPCompanies company)
         {
             if (!await Program.IsTokenExpired(company.ClioToken).ConfigureAwait(false))
                 return "Bearer " + company.ClioToken;

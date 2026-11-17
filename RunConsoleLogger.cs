@@ -18,14 +18,7 @@ namespace CSP.Clio.Sync
         {
             originalOut = Console.Out;
             originalError = Console.Error;
-            // A second copy of the same command (for example one started by hand while the scheduled one runs) must not crash on the
-            // locked log: share the file for reading, and fall back to a numbered name when it cannot be replaced.
-            try { file = new StreamWriter(new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true }; }
-            catch (IOException)
-            {
-                logPath = Path.Combine(Path.GetDirectoryName(logPath), Path.GetFileNameWithoutExtension(logPath) + "-pid" + System.Diagnostics.Process.GetCurrentProcess().Id + Path.GetExtension(logPath));
-                file = new StreamWriter(new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true };
-            }
+            file = new StreamWriter(logPath, false, new UTF8Encoding(false)) { AutoFlush = true };
 
             var writeLock = new object();
             Console.SetOut(new TeeTextWriter(originalOut, file, writeLock));
@@ -34,15 +27,13 @@ namespace CSP.Clio.Sync
             Console.WriteLine("Run started (local time): " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         }
 
-        public static RunConsoleLogger Start(bool incremental, bool fullCheck = false, bool reconcile = false, bool deleteSync = false)
+        public static RunConsoleLogger Start(bool incremental, bool fullCheck = false, bool reconcile = false)
         {
             var logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
             Directory.CreateDirectory(logDirectory);
 
             // FileMode.Create (used by StreamWriter) replaces the previous run's log.
-            var fileName = deleteSync
-                ? "CSP.Clio.StagingSync-delete-sync-last-run.txt"
-                : reconcile
+            var fileName = reconcile
                 ? "CSP.Clio.StagingSync-reconcile-deletes-last-run.txt"
                 : fullCheck
                 ? "CSP.Clio.StagingSync-full-check-last-run.txt"
