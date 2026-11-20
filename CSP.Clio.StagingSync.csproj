@@ -118,7 +118,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConsolidateClioCompanies.cs" />
+    <Compile Include="ClioPageStreamClient.cs" />
+    <Compile Include="ClioTokens.cs" />
+    <Compile Include="ClioTokenTest.cs" />
+    <Compile Include="CycleRunner.cs" />
     <Compile Include="IncrementalSyncRunner.cs" />
+    <Compile Include="IncrementalWindowRunner.cs" />
+    <Compile Include="LogPaths.cs" />
     <Compile Include="DeleteReconciler.cs" />
     <Compile Include="FullCheckRunner.cs" />
     <Compile Include="PipelineLock.cs" />
@@ -569,6 +575,8 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="10_Create_Incremental_Sync_Control.sql" />
+    <Content Include="14_Create_LineItems_Bill_Index.sql" />
+    <Content Include="15_Drop_Reverted_Clio_Live_Objects.sql" />
     <Content Include="08_Clear_Clio_Staging_Control_Tables.sql" />
     <Content Include="Data\ENModel.Context.tt">
       <Generator>TextTemplatingFileGenerator</Generator>

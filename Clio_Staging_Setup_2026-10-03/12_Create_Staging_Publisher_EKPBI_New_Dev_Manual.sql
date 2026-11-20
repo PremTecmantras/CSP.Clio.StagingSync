@@ -29,7 +29,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.PublishApprovedClioStagingRun
     @RunID uniqueidentifier,
     @DryRun bit = 1,
-    @PublishReporting bit = 1
+    @RebuildReporting bit = 1
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -176,7 +176,7 @@ BEGIN
             THROW 51037, 'The staging run does not have a COMPLETE result with a recorded SQL row count for every approved endpoint and company.', 1;
 
         /* ---- Reporting layer readiness (new). Staging must have finished building it from the current raw data. ---- */
-        IF @PublishReporting = 1
+        IF @RebuildReporting = 1
         BEGIN
             IF EXISTS (SELECT 1 FROM [Clio_Staging].control.IncrementalSyncRun WHERE Status = 'RUNNING')
                 THROW 51049, 'A staging incremental sync is RUNNING. Wait for it to finish before publishing.', 1;
@@ -341,7 +341,7 @@ BEGIN
         DEALLOCATE plan_cursor;
 
         /* Reporting plan and safety checks: never replace a populated Dev table with an empty or differently shaped one. */
-        IF @PublishReporting = 1
+        IF @RebuildReporting = 1
         BEGIN
             DECLARE reporting_plan_cursor CURSOR LOCAL FAST_FORWARD FOR
                 SELECT TableName FROM #ReportingMap ORDER BY SortOrder;
@@ -412,7 +412,7 @@ BEGIN
                    (SELECT SUM(TargetRowsToDelete) FROM #PublishPlan) AS TotalRawTargetRowsToReplace,
                    (SELECT COUNT(*) FROM #ReportingPlan) AS ReportingTables,
                    (SELECT SUM(StagingRows) FROM #ReportingPlan) AS TotalReportingStagingRows,
-                   @PublishReporting AS WillPublishReporting;
+                   @RebuildReporting AS WillPublishReporting;
             SELECT TableName, SourceRows, TargetRowsToDelete FROM #PublishPlan ORDER BY TableName;
             SELECT TableName, StagingRows, TargetRowsToReplace FROM #ReportingPlan ORDER BY TableName;
             SELECT TableName, CompanyID, AuditRowsWritten, SourceRows
@@ -516,7 +516,7 @@ BEGIN
         DEALLOCATE publish_cursor;
 
         /* ---- 2. Reporting tables built by Clio_Staging (replaces the old rebuild inside this database) ---- */
-        IF @PublishReporting = 1
+        IF @RebuildReporting = 1
         BEGIN
             DECLARE reporting_cursor CURSOR LOCAL FAST_FORWARD FOR
                 SELECT r.TableName, r.Recreatable FROM #ReportingMap AS r ORDER BY r.SortOrder;
@@ -677,9 +677,9 @@ GO
 /*
     Dry run (no data changes), using the approved snapshot RunID recorded by the staging EXE:
 
-    EXEC dbo.PublishApprovedClioStagingRun @RunID = '<RunID>', @DryRun = 1, @PublishReporting = 1;
+    EXEC dbo.PublishApprovedClioStagingRun @RunID = '<RunID>', @DryRun = 1, @RebuildReporting = 1;
 
     Real publication, only after the dry run is approved and a backup of EKPBI_New_Dev exists:
 
-    EXEC dbo.PublishApprovedClioStagingRun @RunID = '<RunID>', @DryRun = 0, @PublishReporting = 1;
+    EXEC dbo.PublishApprovedClioStagingRun @RunID = '<RunID>', @DryRun = 0, @RebuildReporting = 1;
 */

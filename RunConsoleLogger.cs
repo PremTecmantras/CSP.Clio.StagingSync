@@ -18,7 +18,14 @@ namespace CSP.Clio.Sync
         {
             originalOut = Console.Out;
             originalError = Console.Error;
-            file = new StreamWriter(logPath, false, new UTF8Encoding(false)) { AutoFlush = true };
+            // A second copy of the same command (for example one started by hand while the scheduled one runs) must not crash on the
+            // locked log: share the file for reading, and fall back to a numbered name when it cannot be replaced.
+            try { file = new StreamWriter(new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true }; }
+            catch (IOException)
+            {
+                logPath = Path.Combine(Path.GetDirectoryName(logPath), Path.GetFileNameWithoutExtension(logPath) + "-pid" + System.Diagnostics.Process.GetCurrentProcess().Id + Path.GetExtension(logPath));
+                file = new StreamWriter(new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true };
+            }
 
             var writeLock = new object();
             Console.SetOut(new TeeTextWriter(originalOut, file, writeLock));
@@ -27,20 +34,24 @@ namespace CSP.Clio.Sync
             Console.WriteLine("Run started (local time): " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         }
 
-        public static RunConsoleLogger Start(bool incremental, bool fullCheck = false, bool reconcile = false)
+        /// <summary>
+        /// Starts the log of this run. The path comes from LogPaths only: the file given with --log-file (a part started by the cycle), otherwise
+        /// the "Manual" log called <paramref name="manualName"/> (replaced by the next run of the same part).
+        /// </summary>
+        public static RunConsoleLogger StartFor(string[] args, string manualName)
         {
-            var logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-            Directory.CreateDirectory(logDirectory);
+            var path = LogPaths.FromArguments(args) ?? LogPaths.ManualLog(manualName);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            return new RunConsoleLogger(path);
+        }
 
-            // FileMode.Create (used by StreamWriter) replaces the previous run's log.
-            var fileName = reconcile
-                ? "CSP.Clio.StagingSync-reconcile-deletes-last-run.txt"
-                : fullCheck
-                ? "CSP.Clio.StagingSync-full-check-last-run.txt"
-                : incremental
-                    ? "CSP.Clio.StagingSync-incremental-last-run.txt"
-                    : "CSP.Clio.StagingSync-last-run.txt";
-            return new RunConsoleLogger(Path.Combine(logDirectory, fileName));
+        /// <summary>The manual log name of the main EXE for the command that is being started.</summary>
+        public static string ManualNameFor(bool incremental, bool fullCheck, bool reconcile)
+        {
+            return reconcile ? "reconcile-deletes-last-run"
+                : fullCheck ? "full-check-last-run"
+                : incremental ? "incremental-last-run"
+                : "last-run";
         }
 
         public void Dispose()

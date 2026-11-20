@@ -2,6 +2,8 @@ using System;
 using System.Configuration;
 using System.Data.SqlClient;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CSP.Clio.Sync
 {
@@ -14,6 +16,7 @@ namespace CSP.Clio.Sync
     {
         readonly string _connectionString;
         readonly int _timeoutSeconds;
+        readonly int _progressSeconds;
 
         public ReportingBuilder(string connectionString)
         {
@@ -21,6 +24,8 @@ namespace CSP.Clio.Sync
             var raw = ConfigurationManager.AppSettings["ReportingBuildTimeoutMinutes"];
             int minutes;
             _timeoutSeconds = int.TryParse(raw, out minutes) && minutes > 0 ? minutes * 60 : 90 * 60;
+            int seconds;
+            _progressSeconds = int.TryParse(ConfigurationManager.AppSettings["ReportingBuildProgressSeconds"], out seconds) && seconds >= 0 ? seconds : 60;
         }
 
         public void Build()
@@ -37,7 +42,8 @@ namespace CSP.Clio.Sync
             Step("SP_InsertIntoMattersDetailedCustomFields", "EXEC dbo.SP_InsertIntoMattersDetailedCustomFields;");
             Step("PopulateMatterNotesView", "EXEC dbo.PopulateMatterNotesView;");
             Step("SP_UpdateNonBillableActivities", "EXEC dbo.SP_UpdateNonBillableActivities;");
-            Step("PopulateTables (all active views)", "EXEC dbo.PopulateTables;");
+            // The one long step (about 38 minutes on the server): one stored procedure that prints nothing until it is through, so its progress is reported here.
+            Step("PopulateTables (all active views)", "EXEC dbo.PopulateTables;", showViewProgress: true);
             Step("UpdateExpectedHoursDaily", "EXEC dbo.UpdateExpectedHoursDaily;");
             Step("SP_UpdateNonBillableActivities", "EXEC dbo.SP_UpdateNonBillableActivities;");
             Step("SP_AddUserGroupReportTo", "EXEC dbo.SP_AddUserGroupReportTo;");
@@ -84,9 +90,17 @@ namespace CSP.Clio.Sync
             return "EXEC dbo.PopulateTables @updateAll = 0, @specificViewName = N'" + view + "', @EverySync = 0;";
         }
 
-        void Step(string name, string sql)
+        void Step(string name, string sql, bool showViewProgress = false)
         {
             var watch = Stopwatch.StartNew();
+            var stop = new CancellationTokenSource();
+            Task monitor = Task.CompletedTask;
+            if (showViewProgress && _progressSeconds > 0)
+            {
+                var since = ServerNow();   // each view gets LastDataUpdate = (server time) when it has been refreshed
+                monitor = Task.Run(() => ReportViewProgress(name, since, watch, stop.Token));
+            }
+
             try
             {
                 using (var connection = new SqlConnection(_connectionString))
@@ -100,7 +114,49 @@ namespace CSP.Clio.Sync
             {
                 throw new InvalidOperationException("Reporting build failed at '" + name + "' after " + watch.Elapsed.ToString(@"hh\:mm\:ss") + ": " + ex.Message, ex);
             }
+            finally
+            {
+                stop.Cancel();
+                try { monitor.Wait(); } catch { }
+            }
             Console.WriteLine("  " + name + " - " + watch.Elapsed.ToString(@"hh\:mm\:ss"));
+        }
+
+        /// <summary>
+        /// While the long PopulateTables step runs, says every ReportingBuildProgressSeconds how many of the active views have been refreshed and which one was
+        /// the last (read from CSPViewsToTable.LastDataUpdate with NOLOCK on a separate connection, so it never waits for the build). Only a progress report:
+        /// a failure to read it is ignored.
+        /// </summary>
+        void ReportViewProgress(string step, DateTime since, Stopwatch watch, CancellationToken token)
+        {
+            while (!token.WaitHandle.WaitOne(TimeSpan.FromSeconds(_progressSeconds)))
+            {
+                try
+                {
+                    using (var connection = new SqlConnection(_connectionString))
+                    using (var command = new SqlCommand(@"SELECT
+                            (SELECT COUNT(*) FROM dbo.CSPViewsToTable WITH (NOLOCK) WHERE Active = 1 AND ConvertToTable = 1),
+                            (SELECT COUNT(*) FROM dbo.CSPViewsToTable WITH (NOLOCK) WHERE Active = 1 AND ConvertToTable = 1 AND LastDataUpdate >= @since),
+                            (SELECT TOP (1) ViewName FROM dbo.CSPViewsToTable WITH (NOLOCK) WHERE LastDataUpdate >= @since ORDER BY LastDataUpdate DESC),
+                            (SELECT MAX(LastDataUpdate) FROM dbo.CSPViewsToTable WITH (NOLOCK) WHERE LastDataUpdate >= @since)", connection) { CommandTimeout = 30 })
+                    {
+                        command.Parameters.AddWithValue("@since", since);
+                        connection.Open();
+                        using (var reader = command.ExecuteReader())
+                        {
+                            if (!reader.Read()) continue;
+                            var total = Convert.ToInt32(reader.GetValue(0));
+                            var done = Convert.ToInt32(reader.GetValue(1));
+                            var lastView = reader.IsDBNull(2) ? null : Convert.ToString(reader.GetValue(2));
+                            var lastAt = reader.IsDBNull(3) ? (DateTime?)null : reader.GetDateTime(3);
+                            Console.WriteLine("  ... " + step + ": " + done + " of " + total + " views refreshed after " + watch.Elapsed.ToString(@"hh\:mm\:ss") +
+                                (lastView == null ? "; none finished yet (the first views are the largest)."
+                                    : "; last finished: " + lastView + " at " + lastAt.Value.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + "."));
+                        }
+                    }
+                }
+                catch { /* progress only */ }
+            }
         }
     }
 }

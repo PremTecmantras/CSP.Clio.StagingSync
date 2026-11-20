@@ -51,22 +51,131 @@ namespace CSP.Clio.Sync
             new Target { Endpoint = "Users",                Table = "Users",                ApiMethod = "GetUsers",               Service = "users" },
         };
 
-        /// <summary>The --reconcile-deletes command: takes the pipeline lock, reconciles, and rebuilds the reporting tables when rows moved.</summary>
-        public static async Task<int> RunCommandAsync(StagingAudit audit, bool apply)
+        /// <summary>
+        /// The delete pass (--reconcile-deletes in the main EXE, and the separate CSP.Clio.StagingDelete.exe). Only one pass runs at a time
+        /// (ClioDeleteRun). The whole pass holds the SHARED ClioStagingData lock: it runs beside the incremental passes (also shared), but a
+        /// publish cycle (exclusive) can never start while it runs, and a pass never starts while a publish cycle runs - it stops at once.
+        /// Every applied pass is recorded in control.DeleteRun (COMPLETE only when all endpoints were checked without problems).
+        /// </summary>
+        public static async Task<int> RunCommandAsync(StagingAudit audit, bool apply, IEnumerable<string> only = null)
         {
-            using (var pipelineLock = PipelineLock.TryAcquire(audit.ConnectionString))
+            using (var passLock = PipelineLock.TryAcquire(audit.ConnectionString, PipelineLock.DeleteRun, false))
             {
-                if (pipelineLock == null)
+                if (passLock == null)
                 {
-                    Console.Error.WriteLine("DELETE RECONCILIATION BLOCKED: an incremental sync or another pipeline run is active. Wait for it to finish and run again.");
-                    return 1;
+                    Console.WriteLine("DELETE PASS SKIPPED: another delete pass is still running.");
+                    return 0;
                 }
-                audit.PreflightOrThrow(false, pipelineLockHeld: true);
+                using (var dataLock = PipelineLock.TryAcquire(audit.ConnectionString, PipelineLock.DataWrite, true))
+                {
+                    if (dataLock == null)
+                    {
+                        Console.WriteLine("DELETE PASS STOPPED: a publish cycle (or the first load) is running. Nothing was changed; the next pass will run after it.");
+                        return 0;
+                    }
+                    audit.PreflightForDelete();
 
-                var result = await new DeleteReconciler(audit.ConnectionString, apply).RunAsync().ConfigureAwait(false);
-                if (result.Item1 > 0)
-                    Console.WriteLine("Records were removed from the raw tables. Run --full-check (it rebuilds the reporting tables) and then --full-check --confirm-publish to send the deletions to the target database.");
-                return result.Item2 == 0 ? 0 : 1;
+                    var runId = Guid.NewGuid();
+                    if (apply)
+                    {
+                        EnsureDeleteRunTable(audit.ConnectionString);
+                        StartDeleteRun(audit.ConnectionString, runId);
+                    }
+
+                    Tuple<long, int> result;
+                    DeleteReconciler reconciler;
+                    try
+                    {
+                        // The whole pass already holds the shared lock, so the archive steps do not take it again.
+                        reconciler = new DeleteReconciler(audit.ConnectionString, apply, false, only);
+                        result = await reconciler.RunAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (apply) FinishDeleteRun(audit.ConnectionString, runId, "FAILED", 0, 0, ex.GetType().Name + ": " + ex.Message);
+                        throw;
+                    }
+
+                    if (apply)
+                        // A pass limited to some endpoints (--only / DeleteReconcileEndpoints) is recorded as PARTIAL and never counts as a clean pass.
+                        FinishDeleteRun(audit.ConnectionString, runId, result.Item2 != 0 ? "PROBLEMS" : reconciler.IsPartial ? "PARTIAL" : "COMPLETE", result.Item1, result.Item2,
+                            result.Item2 == 0 ? null : result.Item2 + " endpoint(s) reported a problem; see the run log.");
+                    if (result.Item1 > 0)
+                        Console.WriteLine("Records were moved to the *_Deleted tables. The next publish cycle copies them to the reporting database.");
+                    return result.Item2 == 0 ? 0 : 1;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Status of the latest applied delete pass (null when no pass was ever recorded). The publish cycle requires COMPLETE.
+        /// </summary>
+        public static Tuple<string, DateTime, DateTime?> LatestPass(string connectionString)
+        {
+            using (var c = new SqlConnection(connectionString))
+            using (var cmd = new SqlCommand(@"IF OBJECT_ID(N'control.DeleteRun', N'U') IS NULL SELECT CAST(NULL AS varchar(20)), CAST(NULL AS datetime2), CAST(NULL AS datetime2) WHERE 1 = 0
+ELSE SELECT TOP (1) Status, StartedAtUTC, CompletedAtUTC FROM control.DeleteRun ORDER BY StartedAtUTC DESC", c))
+            {
+                c.Open();
+                using (var r = cmd.ExecuteReader())
+                {
+                    if (!r.Read()) return null;
+                    return Tuple.Create(r.GetString(0), r.GetDateTime(1), r.IsDBNull(2) ? (DateTime?)null : r.GetDateTime(2));
+                }
+            }
+        }
+
+        static void EnsureDeleteRunTable(string connectionString)
+        {
+            using (var c = new SqlConnection(connectionString))
+            using (var cmd = new SqlCommand(@"
+IF SCHEMA_ID(N'control') IS NULL EXEC(N'CREATE SCHEMA control AUTHORIZATION dbo;');
+IF OBJECT_ID(N'control.DeleteRun', N'U') IS NULL
+    CREATE TABLE control.DeleteRun
+    (
+        DeleteRunID uniqueidentifier NOT NULL CONSTRAINT PK_DeleteRun PRIMARY KEY,
+        StartedAtUTC datetime2(7) NOT NULL CONSTRAINT DF_DeleteRun_StartedAtUTC DEFAULT SYSUTCDATETIME(),
+        CompletedAtUTC datetime2(7) NULL,
+        Status varchar(20) NOT NULL,
+        RowsMoved bigint NULL,
+        Problems int NULL,
+        ErrorMessage nvarchar(3500) NULL,
+        CONSTRAINT CK_DeleteRun_Status CHECK (Status IN ('RUNNING','COMPLETE','PARTIAL','PROBLEMS','FAILED','ABANDONED'))
+    );", c))
+            {
+                c.Open();
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        static void StartDeleteRun(string connectionString, Guid runId)
+        {
+            using (var c = new SqlConnection(connectionString))
+            {
+                c.Open();
+                // The ClioDeleteRun lock is held, so any RUNNING row belongs to a pass whose process died.
+                using (var abandon = new SqlCommand("UPDATE control.DeleteRun SET Status = 'ABANDONED', CompletedAtUTC = SYSUTCDATETIME(), ErrorMessage = N'Abandoned: the process ended before the pass finished.' WHERE Status = 'RUNNING'", c))
+                    abandon.ExecuteNonQuery();
+                using (var cmd = new SqlCommand("INSERT control.DeleteRun (DeleteRunID, Status) VALUES (@r, 'RUNNING')", c))
+                {
+                    cmd.Parameters.AddWithValue("@r", runId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        static void FinishDeleteRun(string connectionString, Guid runId, string status, long moved, int problems, string error)
+        {
+            using (var c = new SqlConnection(connectionString))
+            using (var cmd = new SqlCommand("UPDATE control.DeleteRun SET Status = @s, CompletedAtUTC = SYSUTCDATETIME(), RowsMoved = @m, Problems = @p, ErrorMessage = @e WHERE DeleteRunID = @r", c))
+            {
+                cmd.Parameters.AddWithValue("@s", status);
+                cmd.Parameters.AddWithValue("@m", moved);
+                cmd.Parameters.AddWithValue("@p", problems);
+                cmd.Parameters.AddWithValue("@e", (object)StagingAudit.Truncate(error, 3500) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@r", runId);
+                c.Open();
+                cmd.ExecuteNonQuery();
             }
         }
 
@@ -77,11 +186,37 @@ namespace CSP.Clio.Sync
         readonly int _smallTableAllowance;
         readonly HashSet<string> _listingAuthoritative;
         readonly Guid _reconcileRunId = Guid.NewGuid();
+        readonly bool _useChunkLocks;
+        readonly int _progressSeconds;
+        readonly bool _useOwnToken;
+        readonly TimeSpan _lockWait;
+        readonly HashSet<string> _only;
 
-        public DeleteReconciler(string connectionString, bool apply)
+        /// <summary>True when only some endpoints are reconciled.</summary>
+        public bool IsPartial { get { return _only.Count > 0 && _only.Count < Targets.Length; } }
+
+        /// <param name="useChunkLocks">True for the background delete task (each archive step takes the shared ClioDataWrite lock itself).
+        /// False only when the caller already holds the exclusive lock for the whole run.</param>
+        /// <param name="only">Endpoint names to reconcile (default: all, or AppSetting DeleteReconcileEndpoints).</param>
+        public DeleteReconciler(string connectionString, bool apply, bool useChunkLocks = true, IEnumerable<string> only = null)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
             _apply = apply;
+            _useChunkLocks = useChunkLocks;
+            _useOwnToken = !string.Equals(ConfigurationManager.AppSettings["DeleteUsesOwnClioToken"], "false", StringComparison.OrdinalIgnoreCase);
+            int progressSeconds;
+            _progressSeconds = int.TryParse(ConfigurationManager.AppSettings["DeleteProgressSeconds"], out progressSeconds) && progressSeconds >= 0 ? progressSeconds : 60;
+            int waitMinutes;
+            _lockWait = TimeSpan.FromMinutes(int.TryParse(ConfigurationManager.AppSettings["DeleteLockWaitMinutes"], out waitMinutes) && waitMinutes >= 0 ? waitMinutes : 30);
+            var wanted = only != null
+                ? only.ToList()
+                : (ConfigurationManager.AppSettings["DeleteReconcileEndpoints"] ?? string.Empty)
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
+            _only = new HashSet<string>(wanted, StringComparer.OrdinalIgnoreCase);
+            var unknown = _only.Where(n => !Targets.Any(t => string.Equals(t.Endpoint, n, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (unknown.Count > 0)
+                throw new ConfigurationErrorsException("Unknown endpoint(s) for the delete reconciliation: " + string.Join(", ", unknown) +
+                    ". Allowed: " + string.Join(", ", Targets.Select(t => t.Endpoint)) + ".");
             decimal pct;
             _maxPercent = decimal.TryParse(ConfigurationManager.AppSettings["DeleteReconcileMaxPercent"], NumberStyles.Number, CultureInfo.InvariantCulture, out pct) && pct > 0 ? pct : 5m;
             int max;
@@ -99,35 +234,80 @@ namespace CSP.Clio.Sync
             Console.WriteLine("Delete reconciliation " + (_apply ? "(APPLY)" : "(REPORT ONLY - nothing will be changed; add --apply to move confirmed deletions)") +
                 ". Safety limit: " + _maxPercent.ToString("0.##", CultureInfo.InvariantCulture) + "% of a company's rows per endpoint.");
             Console.WriteLine("  Endpoint             Company     In table   In Clio   Missing   Result");
-            Console.WriteLine("  (In table = rows in Clio_Staging; In Clio = rows Clio returns now; Missing = rows we hold that Clio no longer has. Missing 0 is correct.)");
+            Console.WriteLine("  (In table = rows in " + StagingAudit.RequiredDatabase + "; In Clio = rows Clio returns now; Missing = rows we hold that Clio no longer has. Missing 0 is correct.)");
             long moved = 0;
+            long checkedCount = 0;
             var problems = 0;
-            var dataManager = new BIDataManager(false);
-            var pageClient = new ClioPageStreamClient();
+            var companies = new BIDataManager(false).GetClioConnectedCompanies();
 
-            foreach (var company in dataManager.GetClioConnectedCompanies())
+            // Clio limits the requests per token (about 50 pages a minute), and every company has its own token, so the companies are
+            // listed in parallel: the pass then takes about as long as the largest company instead of the sum of all of them.
+            int parallelCompanies;
+            if (!int.TryParse(ConfigurationManager.AppSettings["DeleteMaxParallelCompanies"], out parallelCompanies) || parallelCompanies < 1) parallelCompanies = 4;
+            Console.WriteLine("  Companies in parallel: " + Math.Min(parallelCompanies, Math.Max(1, companies.Count)));
+
+            using (var gate = new System.Threading.SemaphoreSlim(parallelCompanies))
             {
-                string bearer;
-                try { bearer = await IncrementalSyncRunner.GetBearerTokenAsync(dataManager, company).ConfigureAwait(false); }
-                catch (Exception ex)
+                var work = companies.Select(async company =>
                 {
-                    problems++;
-                    Console.Error.WriteLine("  RECONCILE SKIPPED " + company.CompanyName + ": no Clio token (" + ex.Message + ")");
-                    continue;
-                }
-
-                foreach (var target in Targets)
-                {
-                    try { moved += await ReconcileAsync(pageClient, company.ID, company.CompanyName, bearer, target).ConfigureAwait(false); }
-                    catch (Exception ex)
+                    await gate.WaitAsync().ConfigureAwait(false);
+                    try
                     {
-                        problems++;
-                        Console.Error.WriteLine("  RECONCILE FAILED " + target.Endpoint + " - " + company.CompanyName + ": " + ex.Message + " (no rows were changed for this endpoint)");
+                        // An Entity Framework context is not thread-safe: each company uses its own data manager.
+                        var dataManager = new BIDataManager(false);
+                        string bearer;
+                        try
+                        {
+                            bearer = _useOwnToken
+                                ? await ClioTokens.GetOwnBearerTokenAsync(dataManager, company).ConfigureAwait(false)
+                                : await ClioTokens.GetBearerTokenAsync(dataManager, company).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Threading.Interlocked.Increment(ref problems);
+                            Console.Error.WriteLine("  RECONCILE SKIPPED " + company.CompanyName + ": no Clio token (" + ex.Message + ")");
+                            return;
+                        }
+
+                        var pageClient = new ClioPageStreamClient();
+                        var companyTargets = Targets.Where(t => _only.Count == 0 || _only.Contains(t.Endpoint)).ToList();
+                        var companyDone = 0;
+                        var companyClock = System.Diagnostics.Stopwatch.StartNew();
+                        foreach (var target in companyTargets)
+                        {
+                            try
+                            {
+                                long movedHere;
+                                try { movedHere = await ReconcileAsync(pageClient, company.ID, company.CompanyName, bearer, target).ConfigureAwait(false); }
+                                catch (Exception first) when (first.Message.IndexOf("HTTP 401", StringComparison.Ordinal) >= 0)
+                                {
+                                    // The token was ended (another process refreshed it): take the current one, or refresh once, and read this endpoint again.
+                                    Console.WriteLine("  " + company.CompanyName + ": Clio answered 401 for " + target.Endpoint + "; getting a current token and trying once more.");
+                                    bearer = await ClioTokens.RecoverAfterUnauthorizedAsync(dataManager, company, bearer).ConfigureAwait(false);
+                                    movedHere = await ReconcileAsync(pageClient, company.ID, company.CompanyName, bearer, target).ConfigureAwait(false);
+                                }
+                                System.Threading.Interlocked.Add(ref moved, movedHere);
+                                System.Threading.Interlocked.Increment(ref checkedCount);
+                                companyDone++;
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Threading.Interlocked.Increment(ref problems);
+                                Console.Error.WriteLine("  RECONCILE FAILED " + target.Endpoint + " - " + company.CompanyName + ": " + ex.Message + " (no rows were changed for this endpoint)");
+                            }
+                        }
+                        // The companies run side by side, so the last line printed is not the end of the pass: say when one company is through.
+                        Console.WriteLine("  COMPANY " + company.CompanyName + " FINISHED: " + companyDone + " of " + companyTargets.Count + " endpoints checked in " +
+                            companyClock.Elapsed.ToString(@"mm\:ss", CultureInfo.InvariantCulture) + ".");
                     }
-                }
+                    finally { gate.Release(); }
+                }).ToList();
+                await Task.WhenAll(work).ConfigureAwait(false);
             }
 
-            Console.WriteLine("Delete reconciliation finished: " + moved + " record(s) moved to *_Deleted, " + problems + " problem(s).");
+            var expected = companies.Count * Targets.Count(t => _only.Count == 0 || _only.Contains(t.Endpoint));
+            Console.WriteLine("Delete reconciliation finished: " + moved + " record(s) moved to *_Deleted, " + problems + " problem(s). " +
+                "Checked " + System.Threading.Interlocked.Read(ref checkedCount) + " of " + expected + " endpoint/company combination(s).");
             return Tuple.Create(moved, problems);
         }
 
@@ -138,12 +318,25 @@ namespace CSP.Clio.Sync
             var metrics = new ClioPageStreamMetrics();
             var started = DateTime.Now;
             Console.WriteLine("  ... reading the " + target.Endpoint + " ID list from Clio for " + companyName + " (" + inTable.Count + " rows in table; large tables can take several minutes)");
+            var progressClock = System.Diagnostics.Stopwatch.StartNew();
+            var lastProgress = TimeSpan.Zero;
             await pageClient.StreamIdsAsync(target.ApiMethod, target.Service, bearer, metrics, ids =>
             {
                 foreach (var id in ids) inClio.Add(id);
+
+                // A list of tens of thousands of IDs takes many minutes and would print nothing until it is complete, so you could not tell
+                // "still reading" from "stuck". Say so every DeleteProgressSeconds (and whether Clio's rate limit made us wait).
+                if (_progressSeconds > 0 && progressClock.Elapsed - lastProgress >= TimeSpan.FromSeconds(_progressSeconds))
+                {
+                    lastProgress = progressClock.Elapsed;
+                    var waits = metrics.RateLimitRetries;
+                    Console.WriteLine("  ... " + target.Endpoint + " / " + companyName + ": " + inClio.Count.ToString("N0", CultureInfo.InvariantCulture) + " of about " +
+                        inTable.Count.ToString("N0", CultureInfo.InvariantCulture) + " IDs read after " + progressClock.Elapsed.ToString(@"mm\:ss", CultureInfo.InvariantCulture) +
+                        (waits > 0 ? "; waited for Clio's rate limit " + waits + "x (" + (int)metrics.RateLimitWaitTime.TotalSeconds + " s)" : string.Empty));
+                }
                 return Task.CompletedTask;
             }).ConfigureAwait(false);
-            Console.WriteLine("  ... done in " + (DateTime.Now - started).ToString(@"mm\:ss"));
+            Console.WriteLine("  ... " + target.Endpoint + " / " + companyName + " list read in " + (DateTime.Now - started).ToString(@"mm\:ss"));
 
             if (!metrics.PaginationComplete)
                 throw new InvalidOperationException("the Clio ID listing did not reach a verified last page");
@@ -192,7 +385,20 @@ namespace CSP.Clio.Sync
                 (confirmed.Count > 0 ? "  IDs: " + string.Join(",", confirmed.Take(10)) + (confirmed.Count > 10 ? ",..." : string.Empty) : string.Empty));
 
             if (confirmed.Count == 0 || !_apply) return 0;
-            return ArchiveAndRemove(target, companyId, confirmed);
+            return ArchiveWithLock(target, companyId, confirmed);
+        }
+
+        /// <summary>Moves the rows while holding the shared ClioDataWrite lock: it runs beside the incremental sync, but never while the publish cycle copies this database.</summary>
+        long ArchiveWithLock(Target target, Guid companyId, List<long> ids)
+        {
+            if (!_useChunkLocks) return ArchiveAndRemove(target, companyId, ids);
+            using (var writeLock = PipelineLock.TryAcquireWithWait(_connectionString, _lockWait, PipelineLock.DataWrite, true))
+            {
+                if (writeLock == null)
+                    throw new InvalidOperationException("the database is locked by a publish cycle (waited " + (int)_lockWait.TotalMinutes +
+                        " minute(s)); these " + ids.Count + " deletion(s) will be retried by the next pass");
+                return ArchiveAndRemove(target, companyId, ids);
+            }
         }
 
         HashSet<long> ReadTableIds(Target target, Guid companyId)

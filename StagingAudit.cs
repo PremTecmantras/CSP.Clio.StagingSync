@@ -111,6 +111,22 @@ namespace CSP.Clio.Sync
             }
         }
 
+        /// <summary>
+        /// Light check for the delete pass: the right database and the bootstrap row. It deliberately does NOT close RUNNING incremental or
+        /// full-run rows, because the delete pass runs beside live incremental passes.
+        /// </summary>
+        public void PreflightForDelete()
+        {
+            using (var c = Open())
+            {
+                var db = (string)Scalar(c, "SELECT DB_NAME()");
+                if (!string.Equals(db, RequiredDatabase, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("SAFETY STOP: connected database is '" + db + "'.");
+                if (Scalar(c, "SELECT PublishEnabled FROM control.BootstrapInfo WHERE ID=1") == null)
+                    throw new InvalidOperationException("control.BootstrapInfo is empty - was 01_Create_Clio_Staging.sql run?");
+            }
+        }
+
         /// <summary>Checks the bootstrap info and that no run is already RUNNING.</summary>
         /// <param name="pipelineLockHeld">True when the caller already holds the pipeline lock: a RUNNING incremental row then
         /// belongs to a process that died (for example a killed or rebooted task), so it is closed as ABANDONED, not treated as a conflict.</param>

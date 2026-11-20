@@ -47,7 +47,11 @@ namespace CSP.Clio.Sync
 
             try
             {
-                using (RunConsoleLogger.Start(HasArgument(args, "--incremental"), HasArgument(args, "--full-check"), HasArgument(args, "--reconcile-deletes")))
+                // The cycle supervisor runs for days: it writes its own daily log (CycleRunner) instead of one replaced run log.
+                if (HasArgument(args, "--cycle"))
+                    return await MainCore(args);
+
+                using (RunConsoleLogger.StartFor(args, RunConsoleLogger.ManualNameFor(HasArgument(args, "--incremental"), HasArgument(args, "--full-check"), HasArgument(args, "--reconcile-deletes"))))
                 {
                     return await MainCore(args);
                 }
@@ -124,10 +128,14 @@ namespace CSP.Clio.Sync
             {
                 audit = StagingAudit.CreateGuarded();
                 Console.WriteLine("Target: " + audit.Describe());
+                if (HasArgument(args, "--token-test"))
+                    return await ClioTokenTest.RunAsync();
+                if (HasArgument(args, "--cycle"))
+                    return await CycleRunner.RunAsync(audit, HasArgument(args, "--once"));
                 if (HasArgument(args, "--full-check"))
-                    return await FullCheckRunner.RunAsync(audit, HasArgument(args, "--confirm-publish"), !HasArgument(args, "--skip-deletes"));
+                    return await FullCheckRunner.RunAsync(audit, HasArgument(args, "--confirm-publish"), HasArgument(args, "--with-deletes"));
                 if (HasArgument(args, "--reconcile-deletes"))
-                    return await DeleteReconciler.RunCommandAsync(audit, HasArgument(args, "--apply"));
+                    return await DeleteReconciler.RunCommandAsync(audit, HasArgument(args, "--apply"), TryGetList(args, "--only"));
                 if (incrementalRequested)
                 {
                     if (!ReadBooleanSetting("EnableIncrementalSync"))
@@ -135,18 +143,12 @@ namespace CSP.Clio.Sync
                         Console.Error.WriteLine("INCREMENTAL SYNC BLOCKED: set EnableIncrementalSync=true only after the incremental control script and first test are complete.");
                         return 2;
                     }
-                    // Scheduled task: if a full run, a publish or the previous hourly run holds the lock, skip quietly (exit 0).
-                    using (var incrementalLock = PipelineLock.TryAcquire(audit.ConnectionString))
-                    {
-                        if (incrementalLock == null)
-                        {
-                            Console.WriteLine("INCREMENTAL SYNC SKIPPED: another pipeline run is active. The next scheduled run will pick up the changes.");
-                            return 0;
-                        }
-                        // An incremental task must never abandon or overlap a full extraction.
-                        audit.PreflightOrThrow(false, pipelineLockHeld: true);
-                        return await new IncrementalSyncRunner(audit.ConnectionString).RunAsync();
-                    }
+                    // With --window-minutes the passes repeat inside this process (for example every 5 minutes for 55 minutes); otherwise one pass.
+                    // A pass skips quietly (exit 0) when the previous pass, a publish cycle or the first load holds the database.
+                    var windowMinutes = TryGetInt(args, "--window-minutes");
+                    if (windowMinutes.HasValue)
+                        return await IncrementalWindowRunner.RunWindowAsync(audit, windowMinutes.Value, TryGetInt(args, "--interval-minutes") ?? 5);
+                    return await IncrementalWindowRunner.RunPassAsync(audit);
                 }
                 audit.PreflightOrThrow(abandonStale);
             }
@@ -156,9 +158,14 @@ namespace CSP.Clio.Sync
                 return 2;
             }
 
-            // A manual full run holds the same lock, so the scheduled incremental task skips while it runs.
-            PipelineLock fullRunLock;
-            try { fullRunLock = PipelineLock.TryAcquire(audit.ConnectionString); }
+            // The first load clears and refills the raw tables: it needs the database for itself, so incremental passes, the delete pass and the
+            // publish cycle (all of them skip, stop or wait) cannot run while it works.
+            IDisposable fullRunLock;
+            try
+            {
+                fullRunLock = PipelineLock.TryAcquireExclusiveSet(audit.ConnectionString,
+                    PipelineLock.DataWrite, PipelineLock.IncrementalRun, PipelineLock.DeleteRun, PipelineLock.Pipeline);
+            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine("Could not take the pipeline lock: " + ex.Message);
@@ -166,7 +173,7 @@ namespace CSP.Clio.Sync
             }
             if (fullRunLock == null)
             {
-                Console.Error.WriteLine("FULL RUN BLOCKED: an incremental sync or another full run is active. Wait for it to finish and run again.");
+                Console.Error.WriteLine("FULL RUN BLOCKED: an incremental pass, a delete pass, a publish cycle or another full run is active. Wait for it to finish and run again.");
                 return 1;
             }
             using (fullRunLock)
@@ -273,6 +280,38 @@ namespace CSP.Clio.Sync
             return value;
         }
 
+        /// <summary>Reads a whole-number App.config value (the default when it is missing or not a number >= 0).</summary>
+        static int ReadIntSetting(string name, int defaultValue)
+        {
+            int value;
+            return int.TryParse(ConfigurationManager.AppSettings[name], out value) && value >= 0 ? value : defaultValue;
+        }
+
+        /// <summary>Reads "--name a,b,c" from the arguments (null when the argument is absent).</summary>
+        static List<string> TryGetList(string[] args, string name)
+        {
+            for (var i = 0; i < args.Length - 1; i++)
+                if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+                    return args[i + 1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).ToList();
+            return null;
+        }
+
+        /// <summary>Reads "--name 12" from the arguments (null when the argument is absent; a value that is not a positive number is an error).</summary>
+        static int? TryGetInt(string[] args, string name)
+        {
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+                {
+                    int value;
+                    if (!int.TryParse(args[i + 1], out value) || value <= 0)
+                        throw new ArgumentException(name + " must be a positive whole number.");
+                    return value;
+                }
+            }
+            return null;
+        }
+
         static Guid? TryGetRunId(string[] args)
         {
             for (var i = 0; i < args.Length - 1; i++)
@@ -299,12 +338,17 @@ namespace CSP.Clio.Sync
             Console.WriteLine("  CSP.Clio.StagingSync.exe --validate [--run-id <GUID>]  Run read-only staging/production validation.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --preflight    Check raw schemas and pipeline readiness without changing data.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --status       Show recent staging and publication audit state.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --incremental  Poll configured changed records into staging only; does not publish or truncate.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check   Manual run: catch up, record snapshot, 10% check, publisher DRY RUN. Never extracts or clears.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --cycle        THE scheduled task: repeats forever: incremental window + delete EXE in parallel, then publish. Add --once for one cycle.");
+            Console.WriteLine("                                          Create the file 'cycle.stop' next to the EXE to end it after the current cycle.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --token-test   Check, for every company, that Clio gives a second access token with its own rate limit (a few tiny requests; see DeleteUsesOwnClioToken).");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --incremental  One incremental pass into staging only; does not publish or truncate.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --incremental --window-minutes 55 --interval-minutes 5  Repeat the pass every 5 minutes for 55 minutes, then end.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check   Publish cycle: needs a recent COMPLETE delete pass (CSP.Clio.StagingDelete.exe) and no running delete pass;");
+            Console.WriteLine("                                          catch up, snapshot, 10% check, reporting build, publisher DRY RUN. Never extracts or clears.");
             Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check --confirm-publish  Same, then publish the snapshot to the target database.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes          Report records deleted in Clio (full ID listing + HTTP 404 confirmation). Changes nothing.");
-            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes --apply  Move confirmed deletions to the *_Deleted tables (run --full-check afterwards).");
-            Console.WriteLine("  --full-check always applies the delete reconciliation first (adds roughly 20-40 minutes). Add --skip-deletes to leave it out for one run.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --full-check --with-deletes     Manual use: run the delete reconciliation inside the cycle (instead of requiring the delete EXE).");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes [--only Users,Tasks]          Report records deleted in Clio (full ID listing + HTTP 404 confirmation). Changes nothing.");
+            Console.WriteLine("  CSP.Clio.StagingSync.exe --reconcile-deletes --apply [--only ...]         Move confirmed deletions to the *_Deleted tables (the delete EXE does the same, always applying).");
         }
 
         /// <returns>false if there was nothing to process.</returns>
@@ -367,7 +411,7 @@ namespace CSP.Clio.Sync
                     {
                         // Same values the production EXE records after a full sync.
                         dataManager.UpdateClioConnectedCompanies(company.ID, updateStartTime);                       // LastRefreshTime
-                        dataManager.UpdateClioConnectedCompaniesLastSyncTime(company.ID, updateStartTime.AddMinutes(-5)); // LastSyncTime
+                        dataManager.UpdateClioConnectedCompaniesLastSyncTime(company.ID, updateStartTime.AddMinutes(-ReadIntSetting("FirstLoadLastSyncOffsetMinutes", 5))); // LastSyncTime
                         dataManager.SetFullSyncStop(company.ID);                                                     // FullSyncStop
                     }
                 }
@@ -398,18 +442,9 @@ namespace CSP.Clio.Sync
             return elapsed.TotalSeconds.ToString("F2") + "s";
         }
 
-        internal static async Task<bool> IsTokenExpired(string bearerToken)
+        internal static Task<bool> IsTokenExpired(string bearerToken)
         {
-            try
-            {
-                var client = new CSP.Clio.API.ClioServiceClient($"Bearer {bearerToken}");
-                var result = await client.GetCustomFields();
-                return result?.DataModel?.error?.Contains("invalid_token") == true;
-            }
-            catch
-            {
-                return true;
-            }
+            return ClioTokens.IsTokenExpired(bearerToken);
         }
 
         /// <summary>Same endpoint order and Save* calls as ClioDataSyncManager in CSP.Clio.Sync (doFullSync = true).</summary>
@@ -559,258 +594,6 @@ namespace CSP.Clio.Sync
                 action(partition, value);
             }
             await Task.CompletedTask;
-        }
-    }
-
-    internal sealed class ClioPageStreamMetrics
-    {
-        public TimeSpan ApiDownloadTime { get; set; }
-        public TimeSpan RateLimitWaitTime { get; set; }
-        public int PagesReceived { get; set; }
-        public int RequestsAttempted { get; set; }
-        public int RateLimitRetries { get; set; }
-        public bool PaginationComplete { get; set; }
-    }
-
-    internal sealed class ClioPageStreamClient
-    {
-        const int MaximumRateLimitRetries = 5;
-        readonly Uri _baseUri;
-
-        public ClioPageStreamClient()
-        {
-            var configuredBaseUrl = ConfigurationManager.AppSettings["ClioApiBaseUrl"];
-            if (string.IsNullOrWhiteSpace(configuredBaseUrl))
-                configuredBaseUrl = "https://eu.app.clio.com/api/v4/";
-
-            Uri baseUri;
-            if (!Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out baseUri) || baseUri.Scheme != Uri.UriSchemeHttps)
-                throw new ConfigurationErrorsException("ClioApiBaseUrl must be an absolute HTTPS URL.");
-
-            var builder = new UriBuilder(baseUri);
-            if (!builder.Path.EndsWith("/", StringComparison.Ordinal))
-                builder.Path += "/";
-            _baseUri = builder.Uri;
-        }
-
-        public async Task StreamAsync(
-            string apiMethodName,
-            string apiService,
-            string bearerToken,
-            ClioPageStreamMetrics metrics,
-            Func<CSP.Clio.API.Data.IDataRoot, Task> consumePage,
-            string additionalQuery = null)
-        {
-            if (metrics == null) throw new ArgumentNullException(nameof(metrics));
-            if (consumePage == null) throw new ArgumentNullException(nameof(consumePage));
-            if (string.IsNullOrWhiteSpace(bearerToken)) throw new ArgumentException("A bearer token is required.", nameof(bearerToken));
-
-            var fields = GetDefaultFields(apiMethodName);
-            var pageType = GetPageType(apiMethodName);
-            var nextUrl = BuildInitialUrl(apiService, fields, additionalQuery);
-            var consecutiveRateLimitRetries = 0;
-            var client = new RestClient(_baseUri.ToString());
-
-            while (!string.IsNullOrWhiteSpace(nextUrl))
-            {
-                var request = new RestRequest(nextUrl, Method.Get);
-                request.AddHeader("Authorization", bearerToken);
-
-                RestResponse response;
-                var requestTimer = Stopwatch.StartNew();
-                metrics.RequestsAttempted++;
-                try
-                {
-                    response = await client.ExecuteAsync(request).ConfigureAwait(false);
-                }
-                finally
-                {
-                    requestTimer.Stop();
-                    metrics.ApiDownloadTime += requestTimer.Elapsed;
-                }
-
-                if (response == null)
-                    throw new InvalidOperationException("Clio API returned no response for " + apiService + ".");
-
-                if ((int)response.StatusCode == 429)
-                {
-                    if (consecutiveRateLimitRetries >= MaximumRateLimitRetries)
-                        throw new InvalidOperationException("Clio API rate-limit retry limit reached for " + apiService + ".");
-
-                    var wait = GetRetryDelay(response);
-                    metrics.RateLimitRetries++;
-                    var waitTimer = Stopwatch.StartNew();
-                    await Task.Delay(wait).ConfigureAwait(false);
-                    waitTimer.Stop();
-                    metrics.RateLimitWaitTime += waitTimer.Elapsed;
-                    consecutiveRateLimitRetries++;
-                    continue;
-                }
-
-                if (!response.IsSuccessful)
-                    throw new InvalidOperationException("Clio API request failed for " + apiService + " (HTTP " + (int)response.StatusCode + ", " + response.ResponseStatus + ").");
-
-                var page = JsonConvert.DeserializeObject(response.Content, pageType) as CSP.Clio.API.Data.IDataRoot;
-                if (page == null)
-                    throw new InvalidOperationException("Clio API returned an empty or invalid page for " + apiService + ".");
-
-                if (page.GetData() == null)
-                    throw new InvalidOperationException("Clio API page had no data payload for " + apiService + ".");
-
-                metrics.PagesReceived++;
-                await consumePage(page).ConfigureAwait(false);
-
-                consecutiveRateLimitRetries = 0;
-                nextUrl = page.GetNextPageUrl();
-                if (string.IsNullOrWhiteSpace(nextUrl))
-                {
-                    metrics.PaginationComplete = true;
-                    break;
-                }
-
-                ValidateNextPageUrl(nextUrl);
-            }
-        }
-
-        /// <summary>
-        /// Streams only the Clio IDs of an endpoint, using the same request the extraction uses (same filters and ordering after
-        /// the field list) so the ID set is directly comparable with the raw table. Used by the delete reconciliation.
-        /// </summary>
-        public async Task StreamIdsAsync(string apiMethodName, string apiService, string bearerToken,
-            ClioPageStreamMetrics metrics, Func<List<long>, Task> consumeIds)
-        {
-            var defaultFields = GetDefaultFields(apiMethodName);
-            var extraAt = defaultFields.IndexOf('&');
-            var extras = extraAt >= 0 ? defaultFields.Substring(extraAt) : string.Empty;   // for example "&type=Matter"
-            var nextUrl = _baseUri.AbsoluteUri + apiService.TrimStart('/') + "?fields=id" + extras
-                + (extras.IndexOf("limit=", StringComparison.OrdinalIgnoreCase) >= 0 ? string.Empty : "&limit=200");
-            ValidateNextPageUrl(nextUrl);
-            var client = new RestClient(_baseUri.ToString());
-
-            while (!string.IsNullOrWhiteSpace(nextUrl))
-            {
-                var response = await GetWithRateLimitRetryAsync(client, nextUrl, bearerToken, metrics, apiService).ConfigureAwait(false);
-                if (!response.IsSuccessful)
-                    throw new InvalidOperationException("Clio API request failed for " + apiService + " (HTTP " + (int)response.StatusCode + ").");
-
-                var root = Newtonsoft.Json.Linq.JObject.Parse(response.Content);
-                var data = root["data"] as Newtonsoft.Json.Linq.JArray;
-                if (data == null)
-                    throw new InvalidOperationException("Clio API page had no data payload for " + apiService + ".");
-
-                metrics.PagesReceived++;
-                await consumeIds(data.Select(item => (long)item["id"]).ToList()).ConfigureAwait(false);
-
-                nextUrl = (string)root["meta"]?["paging"]?["next"];
-                if (string.IsNullOrWhiteSpace(nextUrl))
-                {
-                    metrics.PaginationComplete = true;
-                    break;
-                }
-                ValidateNextPageUrl(nextUrl);
-            }
-        }
-
-        /// <summary>True when Clio still returns the record, false on HTTP 404. Anything else is an error, never "deleted".</summary>
-        public async Task<bool> RecordExistsAsync(string apiService, long id, string bearerToken)
-        {
-            var client = new RestClient(_baseUri.ToString());
-            var url = _baseUri.AbsoluteUri + apiService.TrimStart('/') + "/" + id.ToString(System.Globalization.CultureInfo.InvariantCulture) + "?fields=id";
-            ValidateNextPageUrl(url);
-            var response = await GetWithRateLimitRetryAsync(client, url, bearerToken, new ClioPageStreamMetrics(), apiService).ConfigureAwait(false);
-            if ((int)response.StatusCode == 404) return false;
-            if (response.IsSuccessful) return true;
-            throw new InvalidOperationException("Clio API check failed for " + apiService + "/" + id + " (HTTP " + (int)response.StatusCode + ").");
-        }
-
-        async Task<RestResponse> GetWithRateLimitRetryAsync(RestClient client, string url, string bearerToken,
-            ClioPageStreamMetrics metrics, string apiService)
-        {
-            for (var attempt = 0; ; attempt++)
-            {
-                var request = new RestRequest(url, Method.Get);
-                request.AddHeader("Authorization", bearerToken);
-                var timer = Stopwatch.StartNew();
-                metrics.RequestsAttempted++;
-                RestResponse response;
-                try { response = await client.ExecuteAsync(request).ConfigureAwait(false); }
-                finally { timer.Stop(); metrics.ApiDownloadTime += timer.Elapsed; }
-
-                if (response == null)
-                    throw new InvalidOperationException("Clio API returned no response for " + apiService + ".");
-                if ((int)response.StatusCode != 429)
-                    return response;
-                if (attempt >= MaximumRateLimitRetries)
-                    throw new InvalidOperationException("Clio API rate-limit retry limit reached for " + apiService + ".");
-
-                metrics.RateLimitRetries++;
-                var wait = Stopwatch.StartNew();
-                await Task.Delay(GetRetryDelay(response)).ConfigureAwait(false);
-                metrics.RateLimitWaitTime += wait.Elapsed;
-            }
-        }
-
-        static string GetDefaultFields(string apiMethodName)
-        {
-            var method = typeof(CSP.Clio.API.ClioServiceClient).GetMethod(apiMethodName, BindingFlags.Instance | BindingFlags.Public);
-            var parameter = method?.GetParameters().FirstOrDefault();
-            var value = parameter?.DefaultValue as string;
-            if (string.IsNullOrWhiteSpace(value))
-                throw new InvalidOperationException("No default field selection is available for Clio API method '" + apiMethodName + "'.");
-            return value;
-        }
-
-        static Type GetPageType(string apiMethodName)
-        {
-            var method = typeof(CSP.Clio.API.ClioServiceClient).GetMethod(apiMethodName, BindingFlags.Instance | BindingFlags.Public);
-            var methodReturnType = method?.ReturnType;
-            if (methodReturnType == null || !methodReturnType.IsGenericType || methodReturnType.GetGenericTypeDefinition() != typeof(Task<>))
-                throw new InvalidOperationException("Unable to determine the Clio page type for API method '" + apiMethodName + "'.");
-
-            var operationType = methodReturnType.GetGenericArguments()[0];
-            var pageType = operationType.GetProperty("DataModel")?.PropertyType;
-            if (pageType == null || !typeof(CSP.Clio.API.Data.IDataRoot).IsAssignableFrom(pageType))
-                throw new InvalidOperationException("Clio API method '" + apiMethodName + "' does not return a supported page model.");
-            return pageType;
-        }
-
-        string BuildInitialUrl(string apiService, string fields, string additionalQuery)
-        {
-            if (string.IsNullOrWhiteSpace(apiService) || apiService.IndexOfAny(new[] { '?', '#', '\\' }) >= 0)
-                throw new ArgumentException("Invalid Clio API service path.", nameof(apiService));
-
-            if (!string.IsNullOrWhiteSpace(additionalQuery) &&
-                (additionalQuery.IndexOf('#') >= 0 || additionalQuery.IndexOf('?') >= 0 || additionalQuery.IndexOf('\\') >= 0))
-                throw new ArgumentException("Invalid additional Clio API query string.", nameof(additionalQuery));
-
-            var url = _baseUri.AbsoluteUri + apiService.TrimStart('/') + "?fields=" + fields;
-            if (!string.IsNullOrWhiteSpace(additionalQuery))
-                url += "&" + additionalQuery.TrimStart('&');
-            ValidateNextPageUrl(url);
-            return url;
-        }
-
-        void ValidateNextPageUrl(string url)
-        {
-            Uri next;
-            if (!Uri.TryCreate(url, UriKind.Absolute, out next) || next.Scheme != Uri.UriSchemeHttps ||
-                !string.Equals(next.Host, _baseUri.Host, StringComparison.OrdinalIgnoreCase) || next.Port != _baseUri.Port ||
-                !next.AbsolutePath.StartsWith(_baseUri.AbsolutePath, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Clio API returned a paging URL outside the configured HTTPS API path.");
-        }
-
-        static TimeSpan GetRetryDelay(RestResponse response)
-        {
-            var retryAfter = response.Headers?.FirstOrDefault(h => string.Equals(h.Name, "Retry-After", StringComparison.OrdinalIgnoreCase))?.Value?.ToString();
-            int seconds;
-            if (int.TryParse(retryAfter, out seconds) && seconds >= 0)
-                return TimeSpan.FromSeconds(seconds);
-
-            var match = Regex.Match(response.Content ?? string.Empty, @"retry\s+in\s+(\d+)", RegexOptions.IgnoreCase);
-            if (match.Success && int.TryParse(match.Groups[1].Value, out seconds) && seconds >= 0)
-                return TimeSpan.FromSeconds(seconds);
-
-            return TimeSpan.FromSeconds(60);
         }
     }
 }

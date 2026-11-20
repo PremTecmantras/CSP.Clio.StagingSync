@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CSP.Clio.StagingDelete.exe - the separate delete EXE of the staging pipeline.
+  It runs ONE delete pass (records deleted in Clio are moved to the *_Deleted tables of Clio_Staging) and records it in control.DeleteRun.
+  It is started by the cycle supervisor of CSP.Clio.StagingSync.exe (argument: cycle), or can be run alone.
+
+  The code is not copied: the shared source files of CSP.Clio.StagingSync (the parent folder) are compiled into this EXE by link, so the tested
+  StagingSync project is untouched. The EXE is written next to CSP.Clio.StagingSync.exe (the bin folder of the parent project) and uses the SAME
+  App.config (linked), so both EXEs always use the same connection strings and settings.
+-->
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.props" Condition="Exists('..\..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.props')" />
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{3D8F4C21-7B6E-4A59-A1C4-5E2B9D0C7F32}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>CSP.Clio.Sync</RootNamespace>
+    <AssemblyName>CSP.Clio.StagingDelete</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <AppConfig>..\App.config</AppConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>..\bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>..\bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="CSPSolutions.Exceptions">
+      <HintPath>..\References\CSPSolutions.Exceptions.dll</HintPath>
+    </Reference>
+    <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\EntityFramework.6.4.4\lib\net45\EntityFramework.dll</HintPath>
+    </Reference>
+    <Reference Include="EntityFramework.SqlServer, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\EntityFramework.6.4.4\lib\net45\EntityFramework.SqlServer.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Bcl.AsyncInterfaces, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\Microsoft.Bcl.AsyncInterfaces.8.0.0\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="RestSharp, Version=110.2.0.0, Culture=neutral, PublicKeyToken=598062e77f915f75, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\RestSharp.110.2.0\lib\net471\RestSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ComponentModel.DataAnnotations" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Memory.4.5.5\lib\net461\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Numerics.Vectors, Version=4.1.4.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Numerics.Vectors.4.5.0\lib\net46\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.Data.Entity" />
+    <Reference Include="System.Text.Encodings.Web, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Text.Encodings.Web.8.0.0\lib\net462\System.Text.Encodings.Web.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Json, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Text.Json.8.0.0\lib\net462\System.Text.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.Threading.Tasks.Extensions.4.5.4\lib\net461\System.Threading.Tasks.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ValueTuple, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\..\CSP.CLIO\packages\System.ValueTuple.4.5.0\lib\net47\System.ValueTuple.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Web" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <!-- Shared with CSP.Clio.StagingSync (linked, not copied). -->
+    <Compile Include="..\ClioPageStreamClient.cs"><Link>Shared\ClioPageStreamClient.cs</Link></Compile>
+    <Compile Include="..\ClioTokens.cs"><Link>Shared\ClioTokens.cs</Link></Compile>
+    <Compile Include="..\DeleteReconciler.cs"><Link>Shared\DeleteReconciler.cs</Link></Compile>
+    <Compile Include="..\LogPaths.cs"><Link>Shared\LogPaths.cs</Link></Compile>
+    <Compile Include="..\PipelineLock.cs"><Link>Shared\PipelineLock.cs</Link></Compile>
+    <Compile Include="..\RunConsoleLogger.cs"><Link>Shared\RunConsoleLogger.cs</Link></Compile>
+    <Compile Include="..\StagingAudit.cs"><Link>Shared\StagingAudit.cs</Link></Compile>
+    <Compile Include="..\Services\ClioDocumentClient.cs"><Link>Shared\Services\ClioDocumentClient.cs</Link></Compile>
+    <Compile Include="..\Data\**\*.cs"><Link>Data\%(RecursiveDir)%(Filename)%(Extension)</Link></Compile>
+    <Compile Include="..\Properties\Resources.Designer.cs"><Link>Properties\Resources.Designer.cs</Link></Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <EntityDeploy Include="..\Data\ENModel.edmx"><Link>Data\ENModel.edmx</Link></EntityDeploy>
+    <EmbeddedResource Include="..\Properties\Resources.resx">
+      <Link>Properties\Resources.resx</Link>
+      <LogicalName>CSP.Clio.Sync.Properties.Resources.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\CSP.CLIO\CSP.Clio.API\CSP.Clio.API.csproj">
+      <Project>{fccfb613-0d02-47f4-8feb-565ff66eb5a4}</Project>
+      <Name>CSP.Clio.API</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Import Project="..\..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.targets" Condition="Exists('..\..\CSP.CLIO\packages\EntityFramework.6.4.4\build\EntityFramework.targets')" />
+</Project>

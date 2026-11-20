@@ -32,6 +32,11 @@ namespace CSP.Clio.Sync
             _enabledEndpoints = new HashSet<string>(ReadEndpoints(), StringComparer.OrdinalIgnoreCase);
         }
 
+        // Per company: the company row and its current bearer token, so an endpoint that gets HTTP 401 can renew the token and later endpoints use the new one.
+        readonly object _tokenLock = new object();
+        readonly Dictionary<Guid, C_EKPCompanies> _companies = new Dictionary<Guid, C_EKPCompanies>();
+        readonly Dictionary<Guid, string> _bearers = new Dictionary<Guid, string>();
+
         public async Task<int> RunAsync()
         {
             EnsureControlSchema();
@@ -66,6 +71,7 @@ namespace CSP.Clio.Sync
                     try
                     {
                         var bearerToken = await GetBearerTokenAsync(dataManager, company).ConfigureAwait(false);
+                        lock (_tokenLock) { _companies[company.ID] = company; _bearers[company.ID] = bearerToken; }
                         var pageClient = new ClioPageStreamClient();
                         var savingDataManager = new BIDataManager(true);
 
@@ -86,6 +92,7 @@ namespace CSP.Clio.Sync
 
                 // Rebuild the reporting tables only when raw rows changed, or when the previous run's rebuild did not finish.
                 Console.WriteLine("Incremental polling took " + pollTimer.Elapsed.ToString(@"mm\:ss") + " (" + SumChangedRows(runId) + " changed raw row(s)).");
+                PrintPassSummary(runId);
                 if (rebuildEnabled)
                 {
                     var changedRows = SumChangedRows(runId);
@@ -119,6 +126,47 @@ namespace CSP.Clio.Sync
             {
                 try { FinishRun(runId, false, ex.GetType().Name + ": " + ex.Message); } catch { }
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Two lines that say what the pass checked and what changed, read from control.IncrementalSyncResult (so every endpoint of every company is counted,
+        /// not only the ones with changes). Example:
+        ///   Checked 76 request(s) (19 endpoints x 4 companies): 76 OK, 0 failed.
+        ///   Changed rows: Activities 8 (MBLLF 6, KAT 2); Bills 3 (OHLLP 3). All other endpoints: no change.
+        /// </summary>
+        void PrintPassSummary(Guid runId)
+        {
+            try
+            {
+                var rows = new List<Tuple<string, string, string, long>>();   // endpoint, company, status, rows
+                using (var c = Open())
+                using (var cmd = new SqlCommand(@"SELECT r.Endpoint, ISNULL(co.CompanyName, CONVERT(varchar(36), r.CompanyID)), r.Status, ISNULL(r.RowsReceived, 0)
+                    FROM control.IncrementalSyncResult r LEFT JOIN dbo._EKPCompanies co ON co.ID = r.CompanyID WHERE r.IncrementalRunID = @r", c))
+                {
+                    cmd.Parameters.AddWithValue("@r", runId);
+                    using (var reader = cmd.ExecuteReader())
+                        while (reader.Read())
+                            rows.Add(Tuple.Create(reader.GetString(0), reader.GetString(1), reader.GetString(2), Convert.ToInt64(reader.GetValue(3))));
+                }
+
+                var endpointCount = rows.Select(r => r.Item1).Distinct().Count();
+                var companyCount = rows.Select(r => r.Item2).Distinct().Count();
+                var failed = rows.Count(r => r.Item3 != "COMPLETE");
+                Console.WriteLine("Checked " + rows.Count + " request(s) (" + endpointCount + " endpoints x " + companyCount + " companies): " +
+                    (rows.Count - failed) + " OK, " + failed + " failed.");
+
+                var changed = rows.Where(r => r.Item4 > 0).GroupBy(r => r.Item1).OrderBy(g => g.Key)
+                    .Select(g => g.Key + " " + g.Sum(x => x.Item4) + " (" + string.Join(", ", g.OrderBy(x => x.Item2).Select(x => x.Item2 + " " + x.Item4)) + ")").ToList();
+                var unchanged = endpointCount - rows.Where(r => r.Item4 > 0).Select(r => r.Item1).Distinct().Count();
+                Console.WriteLine(changed.Count == 0
+                    ? "Changed rows: none. All " + endpointCount + " endpoints: no change."
+                    : "Changed rows: " + string.Join("; ", changed) + ". The other " + unchanged + " endpoint(s): no change.");
+            }
+            catch (Exception ex)
+            {
+                // The summary is only a convenience for the log; it must never fail a pass.
+                Console.WriteLine("(Pass summary could not be written: " + ex.Message + ")");
             }
         }
 
@@ -197,13 +245,33 @@ namespace CSP.Clio.Sync
             {
                 var query = "updated_since=" + Uri.EscapeDataString(fromUtc.ToString("o", CultureInfo.InvariantCulture));
                 var metrics = new ClioPageStreamMetrics();
-                await pageClient.StreamAsync(apiMethod, service, bearerToken, metrics, root =>
+                // The token of the company as it is now (an earlier endpoint of this pass may have had to renew it).
+                string currentBearer;
+                lock (_tokenLock) { currentBearer = _bearers.TryGetValue(companyId, out var b) ? b : bearerToken; }
+
+                for (var attempt = 1; ; attempt++)
                 {
-                    var data = root.GetData().Cast<T>().ToList();
-                    rows += data.Count;
-                    if (data.Count > 0) save(data);
-                    return Task.CompletedTask;
-                }, query).ConfigureAwait(false);
+                    try
+                    {
+                        rows = 0;
+                        metrics = new ClioPageStreamMetrics();
+                        await pageClient.StreamAsync(apiMethod, service, currentBearer, metrics, root =>
+                        {
+                            var data = root.GetData().Cast<T>().ToList();
+                            rows += data.Count;
+                            if (data.Count > 0) save(data);
+                            return Task.CompletedTask;
+                        }, query).ConfigureAwait(false);
+                        break;
+                    }
+                    catch (Exception first) when (attempt == 1 && first.Message.IndexOf("HTTP 401", StringComparison.Ordinal) >= 0 && _companies.ContainsKey(companyId))
+                    {
+                        // The token was ended (another process refreshed it): take the current one, or refresh once, and read this endpoint again.
+                        Console.WriteLine("  " + companyName + ": Clio answered 401 for " + endpoint + "; getting a current token and trying once more.");
+                        currentBearer = await ClioTokens.RecoverAfterUnauthorizedAsync(new BIDataManager(false), _companies[companyId], currentBearer).ConfigureAwait(false);
+                        lock (_tokenLock) { _bearers[companyId] = currentBearer; }
+                    }
+                }
 
                 if (!metrics.PaginationComplete)
                     throw new InvalidOperationException("Clio pagination did not reach a verified final page.");
@@ -219,20 +287,9 @@ namespace CSP.Clio.Sync
             }
         }
 
-        internal static async Task<string> GetBearerTokenAsync(BIDataManager dataManager, C_EKPCompanies company)
+        internal static Task<string> GetBearerTokenAsync(BIDataManager dataManager, C_EKPCompanies company)
         {
-            if (!await Program.IsTokenExpired(company.ClioToken).ConfigureAwait(false))
-                return "Bearer " + company.ClioToken;
-
-            var tokenClient = new CSP.Clio.API.ClioServiceClient("Bearer " + company.ClioToken);
-            var token = await tokenClient.GetNewToken(company.ClioApiKey, company.ClioApiSecret, company.ClioRefreshToken)
-                .ConfigureAwait(false);
-            if (token == null || string.IsNullOrWhiteSpace(token.access_token))
-                throw new InvalidOperationException("Clio OAuth token refresh returned no access token.");
-
-            company.ClioToken = token.access_token;
-            dataManager.UpdateClioConnectedCompanies(company.ID, DateTime.UtcNow, company.ClioToken);
-            return "Bearer " + company.ClioToken;
+            return ClioTokens.GetBearerTokenAsync(dataManager, company);
         }
 
         bool IsEnabled(string endpoint) { return _enabledEndpoints.Contains(endpoint); }
@@ -356,7 +413,11 @@ namespace CSP.Clio.Sync
                 cmd.Parameters.AddWithValue("@c", companyId);
                 cmd.Parameters.AddWithValue("@e", endpoint);
                 var value = cmd.ExecuteScalar();
-                return value == null || value == DBNull.Value ? DateTime.UtcNow.AddHours(-_initialLookbackHours) : Convert.ToDateTime(value).ToUniversalTime();
+                // The column holds a UTC time (datetime2) and comes back with Kind = Unspecified. ToUniversalTime() would treat that as LOCAL time and
+                // subtract the offset of this machine (UTC+4 on the server: every pass then re-read the last 4 hours), so mark it as UTC instead.
+                return value == null || value == DBNull.Value
+                    ? DateTime.UtcNow.AddHours(-_initialLookbackHours)
+                    : DateTime.SpecifyKind(Convert.ToDateTime(value), DateTimeKind.Utc);
             }
         }
 

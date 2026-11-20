@@ -32,7 +32,7 @@ namespace CSP.Clio.Sync
                     command.CommandTimeout = timeoutMinutes > 0 ? timeoutMinutes * 60 : 3600;
                     command.Parameters.Add("@RunID", SqlDbType.UniqueIdentifier).Value = runId;
                     command.Parameters.Add("@DryRun", SqlDbType.Bit).Value = false;
-                    command.Parameters.Add("@PublishReporting", SqlDbType.Bit).Value = true;
+                    command.Parameters.Add("@RebuildReporting", SqlDbType.Bit).Value = true;
                     command.ExecuteNonQuery();
                 }
 
@@ -70,7 +70,7 @@ FROM control.PublishRun WHERE SourceRunID=@r ORDER BY StartedAtUTC DESC", connec
                 {
                     command.Parameters.Add("@RunID", SqlDbType.UniqueIdentifier).Value = runId;
                     command.Parameters.Add("@DryRun", SqlDbType.Bit).Value = true;
-                    command.Parameters.Add("@PublishReporting", SqlDbType.Bit).Value = true;
+                    command.Parameters.Add("@RebuildReporting", SqlDbType.Bit).Value = true;
                     using (var reader = command.ExecuteReader())
                     {
                         var resultSet = 0;
@@ -117,6 +117,59 @@ FROM control.PublishRun WHERE SourceRunID=@r ORDER BY StartedAtUTC DESC", connec
             var connection = new SqlConnection(builder.ConnectionString);
             connection.Open();
             return connection;
+        }
+
+        /// <summary>
+        /// Called at the START of the publish cycle, before the catch-up and the 20-40 minute reporting build: the target database must hold the current
+        /// version of the publisher procedure (script 12: it has the parameter @PublishReporting; script 07 alone creates an older version without it).
+        /// Without this check a missing script 12 is only found at the very last step, after the whole build. Returns null when all is well,
+        /// otherwise the message to show (nothing is changed either way).
+        /// </summary>
+        public static string CheckProcedureIsCurrent()
+        {
+            try
+            {
+                using (var connection = OpenGuarded())
+                {
+                    if (!ProcedureExists(connection))
+                        return "The procedure " + ProcedureName + " does not exist in " + connection.Database + ". Run 07_Create_Production_Publisher_EKPBI_New_Dev_Manual.sql and then 12_Create_Staging_Publisher_EKPBI_New_Dev_Manual.sql in " + connection.Database + ".";
+
+                    //using (var command = new SqlCommand("SELECT COUNT(*) FROM sys.parameters WHERE object_id = OBJECT_ID(N'dbo.PublishApprovedClioStagingRun', N'P') AND name = N'@PublishReporting'", connection))
+                    //{
+                    //    if (Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    //        return "The procedure " + ProcedureName + " in " + connection.Database + " is an older version (it has no @PublishReporting parameter). " +
+                    //            "Run 12_Create_Staging_Publisher_EKPBI_New_Dev_Manual.sql in " + connection.Database + " (it is CREATE OR ALTER, so it is safe to run again), then start the publish again.";
+                    //}
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                return "The publisher procedure in the target database could not be checked: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// True when the publisher procedure in the target database rebuilds the reporting tables ITSELF (its text calls PopulateTables), as the
+        /// "rebuild in target" version does. The reporting tables built in Clio_Staging are then never used by the publish, so building them there is
+        /// the same 20+ minutes of work done twice. False (the "copy the staging reporting tables" version) or unknown: staging must build them.
+        /// </summary>
+        public static bool TargetRebuildsReportingItself()
+        {
+            try
+            {
+                using (var connection = OpenGuarded())
+                using (var command = new SqlCommand("SELECT OBJECT_DEFINITION(OBJECT_ID(N'dbo.PublishApprovedClioStagingRun', N'P'))", connection))
+                {
+                    var text = command.ExecuteScalar() as string;
+                    if (text == null) return false;
+                    // Comments are removed first: the "copy from staging" version only MENTIONS PopulateTables in its header, it never executes it.
+                    text = System.Text.RegularExpressions.Regex.Replace(text, @"/\*.*?\*/", " ", System.Text.RegularExpressions.RegexOptions.Singleline);
+                    text = System.Text.RegularExpressions.Regex.Replace(text, @"--[^\r\n]*", " ");
+                    return System.Text.RegularExpressions.Regex.IsMatch(text, @"\bEXEC(UTE)?\s+(\[?dbo\]?\.)?\[?PopulateTables\]?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                }
+            }
+            catch { return false; }
         }
 
         static bool ProcedureExists(SqlConnection connection)
